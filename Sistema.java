@@ -22,58 +22,68 @@ public class Sistema {
 	public class Memory {
 		private int tamMemoria;
 		private int tamPagina;
-		private int numFrames;
+		private int numeroFrames;
 		private boolean[] listaFrames;
 		public Word[] memoriaFisica;
-
+	
 		public Memory(int size, int tamPag) {
 			this.tamMemoria = size;
 			this.tamPagina = tamPag;
-			this.numFrames = size / tamPag;
-			this.listaFrames = new boolean[numFrames];
-			Arrays.fill(listaFrames, true);
-
+			this.numeroFrames = size / tamPagina;
+			this.listaFrames = new boolean[numeroFrames];
+	
+			for (int i = 0; i < listaFrames.length; i++) {
+				listaFrames[i] = true;
+			}
+	
 			memoriaFisica = new Word[tamMemoria];
 			for (int i = 0; i < tamMemoria; i++) {
 				memoriaFisica[i] = new Word(Opcode.___, -1, -1, -1);
 			}
 		}
-
+	
 		public int traduzEndereco(int enderecoLogico, int[] tabelaPaginas) {
 			int numeroPagina = enderecoLogico / tamPagina;
+			if (numeroPagina >= tabelaPaginas.length || numeroPagina < 0) {
+				System.err.println("Erro: Número de página inválido");
+			}
 			int offset = enderecoLogico % tamPagina;
-			int frame = tabelaPaginas[numeroPagina];
-			int enderecoFisico = frame * tamPagina + offset;
+			int frameIndex = tabelaPaginas[numeroPagina];
+			int enderecoFisico = frameIndex * tamPagina + offset;
 			return enderecoFisico;
 		}
-
+		
 		public int[] aloca(int numPalavras) {
 			int numFramesNecessarios = (numPalavras / tamPagina) + 1;
 			int[] tabelaPaginas = new int[numFramesNecessarios];
 			int framesAlocados = 0;
-			for (int i = 0; (i < numFrames) && (framesAlocados != numFramesNecessarios); i++) {
+			
+			for (int i = 0; (i < numeroFrames) && (framesAlocados != numFramesNecessarios); i++) {
 				if (listaFrames[i]) {
 					tabelaPaginas[framesAlocados] = i;
 					listaFrames[i] = false;
 					framesAlocados++;
 				}
 			}
-			if (framesAlocados < numFramesNecessarios) {
-				for (int i = 0; i < tabelaPaginas.length; i++) {
+			
+			if (framesAlocados != numFramesNecessarios) {
+				System.out.println("Erro: Memória insuficiente");
+				for (int i = 0; i < framesAlocados; i++) {
 					listaFrames[tabelaPaginas[i]] = true;
 				}
-				System.out.println("Erro: Memória insuficiente");
 				return null;
 			}
 			return tabelaPaginas;
 		}
-
+	
+		
 		public void desaloca(int[] tabelaPaginas) {
-			for (int i = 0; i < tabelaPaginas.length; i++) {
-				listaFrames[tabelaPaginas[i]] = true;
+			for (int i = 0; i< tabelaPaginas.length; i++) {
+				listaFrames[i] = true;
 			}
 		}
-
+	
+		
 		public void dump(Word w) {
 			System.out.print("[ ");
 			System.out.print(w.opc);
@@ -83,9 +93,9 @@ public class Sistema {
 			System.out.print(w.r2);
 			System.out.print(", ");
 			System.out.print(w.p);
-			System.out.println("  ] ");
+			System.out.println(" ]");
 		}
-
+		
 		public void dump(int ini, int fim) {
 			for (int i = ini; i < fim; i++) {
 				System.out.print(i);
@@ -96,19 +106,20 @@ public class Sistema {
 	}
 
 	public class ProcessManager {
-		private ProcessControlBlock[] pcb;
-		private ProcessControlBlock state;
-		private Memory mem;
+		private Memory memoria;
 		private int id;
-
+		private ProcessControlBlock[] pcb;
+		private ProcessControlBlock status;
+	
 		public ProcessManager(Memory mem) {
 			id = 0;
-			this.mem = mem;
-			pcb = new ProcessControlBlock[mem.numFrames];
+			this.memoria = mem;
+			pcb = new ProcessControlBlock[mem.numeroFrames];
 		}
-
+	
+		
 		public boolean criaProcesso(Word[] program) {
-			int[] tabelaPaginas = mem.aloca(program.length);
+			int[] tabelaPaginas = memoria.aloca(program.length);
 			if (tabelaPaginas != null) {
 				ProcessControlBlock newpcb = new ProcessControlBlock(id);
 				newpcb.tabelaPaginas = tabelaPaginas;
@@ -119,39 +130,42 @@ public class Sistema {
 			} else {
 				return false;
 			}
+			// Carrega o programa na memoria
 			for (int i = 0; i < program.length; i++) {
-				int enderecoFisico = mem.traduzEndereco(i, tabelaPaginas);
-				mem.memoriaFisica[enderecoFisico].opc = program[i].opc;
-				mem.memoriaFisica[enderecoFisico].r1 = program[i].r1;
-				mem.memoriaFisica[enderecoFisico].r2 = program[i].r2;
-				mem.memoriaFisica[enderecoFisico].p = program[i].p;
+				int enderecoFisico = memoria.traduzEndereco(i, tabelaPaginas);
+				memoria.memoriaFisica[enderecoFisico].opc = program[i].opc;
+				memoria.memoriaFisica[enderecoFisico].r1 = program[i].r1;
+				memoria.memoriaFisica[enderecoFisico].r2 = program[i].r2;
+				memoria.memoriaFisica[enderecoFisico].p = program[i].p;
 			}
 			return true;
 		}
-
+	
 		public boolean desalocaProcesso(int id) {
-			if (pcb[id] != null) {
-				mem.desaloca(pcb[id].tabelaPaginas);
+			if (pcb[id] == null) {
+				return false; 
+			} else {
+				memoria.desaloca(pcb[id].tabelaPaginas);
 				pcb[id] = null;
-				// this.id--;
-				return true;
+				return true; 
 			}
-			return false;
 		}
-
+	
 		public boolean executaProcesso(int id) {
 			if (pcb[id] != null) {
 				pcb[id].running = true;
-				state = pcb[id];
+				status = pcb[id];
 				while ((pcb[id] != null) && (pcb[id].running)) {
-					vm.cpu.setContext(0, mem.tamMemoria - 1, pcb[id].pc);
+					
+					vm.cpu.setContext(0, memoria.tamMemoria - 1, pcb[id].pc);
 					vm.cpu.run();
 				}
 				return true;
 			}
-			return false;
+			return false; 
 		}
 	}
+	
 
 	public class ProcessControlBlock {
 		public int[] tabelaPaginas;
@@ -198,10 +212,7 @@ public class Sistema {
 		public ProcessManager pm;
 
 		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug) { // ref a MEMORIA e
-			// interrupt handler
-			// passada na
-			// criacao da
-			// CPU
+	
 			maxInt = 32767; // capacidade de representacao modelada
 			minInt = -32767; // se exceder deve gerar interrupcao de overflow
 			mem = _mem; // usa mem para acessar funcoes auxiliares (dump)
@@ -244,7 +255,7 @@ public class Sistema {
 				// --------------------------------------------------------------------------------------------------
 				// FETCH
 				if (legal(pc)) { // pc valido
-					ir = m[mem.traduzEndereco(pc, pm.state.tabelaPaginas)]; // <<<<<<<<<<<< busca posicao da memoria
+					ir = m[mem.traduzEndereco(pc, pm.status.tabelaPaginas)]; // <<<<<<<<<<<< busca posicao da memoria
 																			// apontada por
 																			// pc, guarda em ir
 
@@ -423,7 +434,7 @@ public class Sistema {
 						// outras
 						case STOP: // por enquanto, para execucao
 							irpt = Interrupts.intSTOP;
-							pm.desalocaProcesso(pm.state.id);
+							pm.desalocaProcesso(pm.status.id);
 							break;
 
 						case DATA:
@@ -443,7 +454,6 @@ public class Sistema {
 							break;
 					}
 				}
-				// --------------------------------------------------------------------------------------------------
 				// VERIFICA INTERRUPÇÃO !!! - TERCEIRA FASE DO CICLO DE INSTRUÇÕES
 				if (!(irpt == Interrupts.noInterrupt)) { // existe interrupção
 					ih.handle(irpt, pc); // desvia para rotina de tratamento
@@ -453,13 +463,9 @@ public class Sistema {
 		}
 	}
 	// ------------------ C P U - fim
-	// ------------------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
 
 	// ------------------- V M - constituida de CPU e MEMORIA
-	// -----------------------------------------------
 	// -------------------------- atributos e construcao da VM
-	// -----------------------------------------------
 	public class VM {
 		public int tamMemoria;
 		public int tamPagina;
@@ -472,7 +478,7 @@ public class Sistema {
 			// chamadas de sistema
 			// cria memória
 			tamMemoria = 1024;
-			tamPagina = 8;
+			tamPagina = 4;
 			mem = new Memory(tamMemoria, tamPagina);
 			m = mem.memoriaFisica;
 			// cria cpu
@@ -480,23 +486,12 @@ public class Sistema {
 		}
 	}
 	// ------------------- V M - fim
-	// ------------------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
 
 	// --------------------H A R D W A R E - fim
-	// -------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
 
-	// -------------------------------------------------------------------------------------------------------
-
-	// -------------------------------------------------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
 	// ------------------- S O F T W A R E - inicio
-	// ----------------------------------------------------------
 
 	// ------------------- I N T E R R U P C O E S - rotinas de tratamento
-	// ----------------------------------
 	public class InterruptHandling {
 		public void handle(Interrupts irpt, int pc) { // apenas avisa - todas interrupcoes neste momento finalizam o
 			// programa
@@ -512,6 +507,9 @@ public class Sistema {
 					break;
 				case intSTOP:
 					System.out.println("                                               Parada solicitada");
+					break;
+				default:
+					System.out.println("                                               Interrupcao nao tratada");
 					break;
 			}
 		}
@@ -586,6 +584,7 @@ public class Sistema {
 	// ------------------- instancia e testa sistema
 	public static void main(String args[]) {
 		Sistema s = new Sistema();
+
 		Scanner scanner = new Scanner(System.in);
 		ProcessManager pm = s.vm.cpu.pm;
 
