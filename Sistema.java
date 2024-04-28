@@ -7,6 +7,7 @@
 //    SW = tratamento int e chamada de sistema
 // Funcionalidades de carga, execução e dump de memória
 
+import java.sql.SQLOutput;
 import java.util.*;
 
 public class Sistema {
@@ -19,11 +20,11 @@ public class Sistema {
 	// --------------------- M E M O R I A - definicoes de palavra de memoria,
 	// memória ----------------------
 
-	public class Memory {
-		private int tamMemoria;
-		private int tamPagina;
-		private int numeroFrames;
-		private boolean[] listaFrames;
+	public static class Memory {
+		private final int tamMemoria;
+		private final int tamPagina;
+		private final int numeroFrames;
+		private final boolean[] listaFrames;
 		public Word[] memoriaFisica;
 	
 		public Memory(int size, int tamPag) {
@@ -82,6 +83,16 @@ public class Sistema {
 				listaFrames[i] = true;
 			}
 		}
+
+		public boolean limpaMemoria() {
+			for (int i = 0; i < tamMemoria; i++) {
+				memoriaFisica[i].opc = Opcode.___;
+				memoriaFisica[i].r1 = -1;
+				memoriaFisica[i].r2 = -1;
+				memoriaFisica[i].p = -1;
+			}
+			return true;
+		}
 	
 		
 		public void dump(Word w) {
@@ -106,9 +117,9 @@ public class Sistema {
 	}
 
 	public class ProcessManager {
-		private Memory memoria;
+		private final Memory memoria;
 		private int id;
-		private ProcessControlBlock[] pcb;
+		private final ProcessControlBlock[] pcb;
 		private ProcessControlBlock status;
 	
 		public ProcessManager(Memory mem) {
@@ -130,7 +141,6 @@ public class Sistema {
 			} else {
 				return false;
 			}
-			// Carrega o programa na memoria
 			for (int i = 0; i < program.length; i++) {
 				int enderecoFisico = memoria.traduzEndereco(i, tabelaPaginas);
 				memoria.memoriaFisica[enderecoFisico].opc = program[i].opc;
@@ -167,7 +177,7 @@ public class Sistema {
 	}
 	
 
-	public class ProcessControlBlock {
+	public static class ProcessControlBlock {
 		public int[] tabelaPaginas;
 		public boolean processState;
 		public boolean running;
@@ -463,7 +473,6 @@ public class Sistema {
 		}
 	}
 	// ------------------ C P U - fim
-
 	// ------------------- V M - constituida de CPU e MEMORIA
 	// -------------------------- atributos e construcao da VM
 	public class VM {
@@ -492,7 +501,7 @@ public class Sistema {
 	// ------------------- S O F T W A R E - inicio
 
 	// ------------------- I N T E R R U P C O E S - rotinas de tratamento
-	public class InterruptHandling {
+	public static class InterruptHandling {
 		public void handle(Interrupts irpt, int pc) { // apenas avisa - todas interrupcoes neste momento finalizam o
 			// programa
 			switch (irpt) {
@@ -532,11 +541,11 @@ public class Sistema {
 					Scanner scanner = new Scanner(System.in);
 					System.out.print("Enter an integer: ");
 					int input = scanner.nextInt();
-					vm.cpu.mem.memoriaFisica[parameter].p = input; // Store input in the specified memory location
+					vm.cpu.mem.memoriaFisica[parameter].p = input;
 					break;
 				case 2: // Output
-					int output = vm.cpu.mem.memoriaFisica[parameter].p; // Read the value from the specified memory
-																		// location
+					int output = vm.cpu.mem.memoriaFisica[parameter].p;
+
 					System.out.println("Output: " + output);
 					break;
 				default:
@@ -582,7 +591,7 @@ public class Sistema {
 	// -------------------------------------------------------------------------------------------------------
 	// -------------------------------------------------------------------------------------------------------
 	// ------------------- instancia e testa sistema
-	public static void main(String args[]) {
+	public static void main(String[] args) {
 		Sistema s = new Sistema();
 
 		Scanner scanner = new Scanner(System.in);
@@ -593,17 +602,22 @@ public class Sistema {
 		System.out.println("==============================\n");
 
 		System.out.println("Escolha uma opção:");
-		System.out.println(
-				"new =  Criar um novo processo (fatorial, fibonacci10, fibonacciSYSCALL, fatorialSYSCALL, progMinimo, pb, pc, soma)");
-		System.out.println("newall =  Criar todos os processos");
-		System.out.println("rm =  Remover um processo");
+
+		System.out.println("new =  Criar um novo processo " +
+				"(fatorial, fibonacci10, " +
+				"fibonacciSYSCALL, fatorialSYSCALL, " +
+				"progMinimo, pb, pc, soma)");
+
 		System.out.println("ps = Listar os processos");
+		System.out.println("rm =  Remover um processo");
 		System.out.println("dump + id =  Mostrar o conteúdo de um processo");
 		System.out.println("dumpM =  Mostrar o conteúdo da memória");
-		System.out.println("dumpParcial =  Mostrar o conteúdo parcial da memória");
 		System.out.println("exec + id =  Executar um processo");
 		System.out.println("trace1 =  Ativar o trace");
 		System.out.println("trace0 =  Desativar o trace");
+		System.out.println("newAll =  Criar todos os processos");
+		System.out.println("dumpParcial =  Mostrar o conteúdo parcial da memória");
+		System.out.println("limpaMemoria =  Limpar toda a memória + processos");
 		System.out.println("exit = Encerrar o programa");
 
 		System.out.print("\nDigite a opção desejada: ");
@@ -652,16 +666,26 @@ public class Sistema {
 				case "newAll":
 					try {
 						pm.criaProcesso(progs.fatorial);
-						pm.criaProcesso(progs.fibonacci10);
 						pm.criaProcesso(progs.fibonacciSYSCALL);
 						pm.criaProcesso(progs.fatorialSYSCALL);
 						pm.criaProcesso(progs.progMinimo);
 						pm.criaProcesso(progs.PB);
 						pm.criaProcesso(progs.PC);
-						pm.criaProcesso(progs.soma);
 					} catch (Exception e) {
 						System.out.println("Ocorreu um erro ao criar processos.");
 					}
+					break;
+
+				//Metodo adicional caso queira limpar a memoria
+				//desacola todos processos e limpa a memoria
+				case "limpaMemoria":
+					pm.status = null;
+					for(int i = 0; i < pm.pcb.length; i++) {
+						if (pm.pcb[i] != null) {
+							pm.desalocaProcesso(i);
+						}
+					}
+					s.vm.cpu.mem.limpaMemoria();
 					break;
 
 				case "rm":
@@ -683,7 +707,7 @@ public class Sistema {
 							System.out.println("Processo " + i);
 						}
 					}
-					if (!existeProcessos) {
+					if (existeProcessos == false) {
 						System.out.println("Não existem processos.");
 					}
 					break;
@@ -706,6 +730,8 @@ public class Sistema {
 						System.out.println("Argumentos inválidos para realizar o dump do processo.");
 					}
 					break;
+
+					//Metodo adicional caso queira imprimir uma parte da memoria
 				case "dumpParcial":
 					try {
 						int inicio = Integer.parseInt(opcao.split(" ")[1]);
@@ -715,7 +741,7 @@ public class Sistema {
 						}
 						s.vm.mem.dump(inicio, fim);
 					} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-						System.out.println("Argumentos inválidos para realizar o dump parcial da memória.");
+						System.out.println("Não foi possível realizar o dump parcial da memória.");
 					}
 					break;
 				case "dumpM":
@@ -755,7 +781,7 @@ public class Sistema {
 	// esta classe representa programas armazenados (como se estivessem em disco)
 	// que podem ser carregados para a memória (load faz isto)
 
-	public class Word { // cada posicao da memoria tem uma instrucao (ou um dado)
+	public static class Word { // cada posicao da memoria tem uma instrucao (ou um dado)
 		public Opcode opc; //
 		public int r1; // indice do primeiro registrador da operacao (Rs ou Rd cfe opcode na tabela)
 		public int r2; // indice do segundo registrador da operacao (Rc ou Rs cfe operacao)
@@ -769,162 +795,162 @@ public class Sistema {
 		}
 	}
 
-	public class Programas {
+	public static class Programas {
 		public Word[] fatorial = new Word[] {
 				// este fatorial so aceita valores positivos. nao pode ser zero
-				new Word(Opcode.LDI, 0, -1, 4), // 0 r0 é valor a calcular fatorial
-				new Word(Opcode.LDI, 1, -1, 1), // 1 r1 é 1 para multiplicar (por r0)
-				new Word(Opcode.LDI, 6, -1, 1), // 2 r6 é 1 para ser o decremento
-				new Word(Opcode.LDI, 7, -1, 8), // 3 r7 tem posicao de stop do programa = 8
-				new Word(Opcode.JMPIE, 7, 0, 0), // 4 se r0=0 pula para r7(=8)
-				new Word(Opcode.MULT, 1, 0, -1), // 5 r1 = r1 * r0
-				new Word(Opcode.SUB, 0, 6, -1), // 6 decrementa r0 1
-				new Word(Opcode.JMP, -1, -1, 4), // 7 vai p posicao 4
-				new Word(Opcode.STD, 1, -1, 10), // 8 coloca valor de r1 na posição 10
-				new Word(Opcode.STOP, -1, -1, -1), // 9 stop
-				new Word(Opcode.DATA, -1, -1, -1) }; // 10 ao final o valor do fatorial estará na posição 10 da memória
+                new Word(Opcode.LDI, 0, -1, 4), // 0 r0 é valor a calcular fatorial
+                new Word(Opcode.LDI, 1, -1, 1), // 1 r1 é 1 para multiplicar (por r0)
+                new Word(Opcode.LDI, 6, -1, 1), // 2 r6 é 1 para ser o decremento
+                new Word(Opcode.LDI, 7, -1, 8), // 3 r7 tem posicao de stop do programa = 8
+                new Word(Opcode.JMPIE, 7, 0, 0), // 4 se r0=0 pula para r7(=8)
+                new Word(Opcode.MULT, 1, 0, -1), // 5 r1 = r1 * r0
+                new Word(Opcode.SUB, 0, 6, -1), // 6 decrementa r0 1
+                new Word(Opcode.JMP, -1, -1, 4), // 7 vai p posicao 4
+                new Word(Opcode.STD, 1, -1, 10), // 8 coloca valor de r1 na posição 10
+                new Word(Opcode.STOP, -1, -1, -1), // 9 stop
+                new Word(Opcode.DATA, -1, -1, -1)}; // 10 ao final o valor do fatorial estará na posição 10 da memória
 
 		public Word[] progMinimo = new Word[] {
-				new Word(Opcode.LDI, 0, -1, 999),
-				new Word(Opcode.STD, 0, -1, 10),
-				new Word(Opcode.STD, 0, -1, 11),
-				new Word(Opcode.STD, 0, -1, 12),
-				new Word(Opcode.STD, 0, -1, 13),
-				new Word(Opcode.STD, 0, -1, 14),
-				new Word(Opcode.STOP, -1, -1, -1) };
+                new Word(Opcode.LDI, 0, -1, 999),
+                new Word(Opcode.STD, 0, -1, 10),
+                new Word(Opcode.STD, 0, -1, 11),
+                new Word(Opcode.STD, 0, -1, 12),
+                new Word(Opcode.STD, 0, -1, 13),
+                new Word(Opcode.STD, 0, -1, 14),
+                new Word(Opcode.STOP, -1, -1, -1)};
 
 		public Word[] fibonacci10 = new Word[] { // mesmo que prog exemplo, so que usa r0 no lugar de r8
-				new Word(Opcode.LDI, 1, -1, 0),
-				new Word(Opcode.STD, 1, -1, 20),
-				new Word(Opcode.LDI, 2, -1, 1),
-				new Word(Opcode.STD, 2, -1, 21),
-				new Word(Opcode.LDI, 0, -1, 22),
-				new Word(Opcode.LDI, 6, -1, 6),
-				new Word(Opcode.LDI, 7, -1, 31),
-				new Word(Opcode.LDI, 3, -1, 0),
-				new Word(Opcode.ADD, 3, 1, -1),
-				new Word(Opcode.LDI, 1, -1, 0),
-				new Word(Opcode.ADD, 1, 2, -1),
-				new Word(Opcode.ADD, 2, 3, -1),
-				new Word(Opcode.STX, 0, 2, -1),
-				new Word(Opcode.ADDI, 0, -1, 1),
-				new Word(Opcode.SUB, 7, 0, -1),
-				new Word(Opcode.JMPIG, 6, 7, -1),
-				new Word(Opcode.STOP, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1), // POS 20
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1) }; // ate aqui - serie de fibonacci ficara armazenada
+                new Word(Opcode.LDI, 1, -1, 0),
+                new Word(Opcode.STD, 1, -1, 20),
+                new Word(Opcode.LDI, 2, -1, 1),
+                new Word(Opcode.STD, 2, -1, 21),
+                new Word(Opcode.LDI, 0, -1, 22),
+                new Word(Opcode.LDI, 6, -1, 6),
+                new Word(Opcode.LDI, 7, -1, 31),
+                new Word(Opcode.LDI, 3, -1, 0),
+                new Word(Opcode.ADD, 3, 1, -1),
+                new Word(Opcode.LDI, 1, -1, 0),
+                new Word(Opcode.ADD, 1, 2, -1),
+                new Word(Opcode.ADD, 2, 3, -1),
+                new Word(Opcode.STX, 0, 2, -1),
+                new Word(Opcode.ADDI, 0, -1, 1),
+                new Word(Opcode.SUB, 7, 0, -1),
+                new Word(Opcode.JMPIG, 6, 7, -1),
+                new Word(Opcode.STOP, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1), // POS 20
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1)}; // ate aqui - serie de fibonacci ficara armazenada
 
 		public Word[] fatorialSYSCALL = new Word[] {
-				new Word(Opcode.LDI, 0, -1, 7), // numero para colocar na memoria
-				new Word(Opcode.STD, 0, -1, 50),
-				new Word(Opcode.LDD, 0, -1, 50),
-				new Word(Opcode.LDI, 1, -1, -1),
-				new Word(Opcode.LDI, 2, -1, 13), // SALVAR POS STOP
-				new Word(Opcode.JMPIL, 2, 0, -1), // caso negativo pula pro STD
-				new Word(Opcode.LDI, 1, -1, 1),
-				new Word(Opcode.LDI, 6, -1, 1),
-				new Word(Opcode.LDI, 7, -1, 13),
-				new Word(Opcode.JMPIE, 7, 0, 0), // POS 9 pula pra STD (Stop-1)
-				new Word(Opcode.MULT, 1, 0, -1),
-				new Word(Opcode.SUB, 0, 6, -1),
-				new Word(Opcode.JMP, -1, -1, 9), // pula para o JMPIE
-				new Word(Opcode.STD, 1, -1, 18),
-				new Word(Opcode.LDI, 8, -1, 2), // escrita
-				new Word(Opcode.LDI, 9, -1, 18), // endereco com valor a escrever
-				new Word(Opcode.SYSCALL, -1, -1, -1),
-				new Word(Opcode.STOP, -1, -1, -1), // POS 17
-				new Word(Opcode.DATA, -1, -1, -1) };// POS 18
+                new Word(Opcode.LDI, 0, -1, 7), // numero para colocar na memoria
+                new Word(Opcode.STD, 0, -1, 50),
+                new Word(Opcode.LDD, 0, -1, 50),
+                new Word(Opcode.LDI, 1, -1, -1),
+                new Word(Opcode.LDI, 2, -1, 13), // SALVAR POS STOP
+                new Word(Opcode.JMPIL, 2, 0, -1), // caso negativo pula pro STD
+                new Word(Opcode.LDI, 1, -1, 1),
+                new Word(Opcode.LDI, 6, -1, 1),
+                new Word(Opcode.LDI, 7, -1, 13),
+                new Word(Opcode.JMPIE, 7, 0, 0), // POS 9 pula pra STD (Stop-1)
+                new Word(Opcode.MULT, 1, 0, -1),
+                new Word(Opcode.SUB, 0, 6, -1),
+                new Word(Opcode.JMP, -1, -1, 9), // pula para o JMPIE
+                new Word(Opcode.STD, 1, -1, 18),
+                new Word(Opcode.LDI, 8, -1, 2), // escrita
+                new Word(Opcode.LDI, 9, -1, 18), // endereco com valor a escrever
+                new Word(Opcode.SYSCALL, -1, -1, -1),
+                new Word(Opcode.STOP, -1, -1, -1), // POS 17
+                new Word(Opcode.DATA, -1, -1, -1)};// POS 18
 
 		public Word[] fibonacciSYSCALL = new Word[] { // mesmo que prog exemplo, so que usa r0 no lugar de r8
-				new Word(Opcode.LDI, 8, -1, 1), // leitura
-				new Word(Opcode.LDI, 9, -1, 100), // endereco a guardar
-				new Word(Opcode.SYSCALL, -1, -1, -1),
-				new Word(Opcode.LDD, 7, -1, 100), // numero do tamanho do fib
-				new Word(Opcode.LDI, 3, -1, 0),
-				new Word(Opcode.ADD, 3, 7, -1),
-				new Word(Opcode.LDI, 4, -1, 36), // posicao para qual ira pular (stop) *
-				new Word(Opcode.LDI, 1, -1, -1), // caso negativo
-				new Word(Opcode.STD, 1, -1, 41),
-				new Word(Opcode.JMPIL, 4, 7, -1), // pula pra stop caso negativo *
-				new Word(Opcode.JMPIE, 4, 7, -1), // pula pra stop caso 0
-				new Word(Opcode.ADDI, 7, -1, 41), // fibonacci + posição do stop
-				new Word(Opcode.LDI, 1, -1, 0),
-				new Word(Opcode.STD, 1, -1, 41), // 25 posicao de memoria onde inicia a serie de fibonacci gerada
-				new Word(Opcode.SUBI, 3, -1, 1), // se 1 pula pro stop
-				new Word(Opcode.JMPIE, 4, 3, -1),
-				new Word(Opcode.ADDI, 3, -1, 1),
-				new Word(Opcode.LDI, 2, -1, 1),
-				new Word(Opcode.STD, 2, -1, 42),
-				new Word(Opcode.SUBI, 3, -1, 2), // se 2 pula pro stop
-				new Word(Opcode.JMPIE, 4, 3, -1),
-				new Word(Opcode.LDI, 0, -1, 43),
-				new Word(Opcode.LDI, 6, -1, 25), // salva posição de retorno do loop
-				new Word(Opcode.LDI, 5, -1, 0), // salva tamanho
-				new Word(Opcode.ADD, 5, 7, -1),
-				new Word(Opcode.LDI, 7, -1, 0), // zera (inicio do loop)
-				new Word(Opcode.ADD, 7, 5, -1), // recarrega tamanho
-				new Word(Opcode.LDI, 3, -1, 0),
-				new Word(Opcode.ADD, 3, 1, -1),
-				new Word(Opcode.LDI, 1, -1, 0),
-				new Word(Opcode.ADD, 1, 2, -1),
-				new Word(Opcode.ADD, 2, 3, -1),
-				new Word(Opcode.STX, 0, 2, -1),
-				new Word(Opcode.ADDI, 0, -1, 1),
-				new Word(Opcode.SUB, 7, 0, -1),
-				new Word(Opcode.JMPIG, 6, 7, -1), // volta para o inicio do loop
-				new Word(Opcode.STOP, -1, -1, -1), // POS 36
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1), // POS 41
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1)
+                new Word(Opcode.LDI, 8, -1, 1), // leitura
+                new Word(Opcode.LDI, 9, -1, 100), // endereco a guardar
+                new Word(Opcode.SYSCALL, -1, -1, -1),
+                new Word(Opcode.LDD, 7, -1, 100), // numero do tamanho do fib
+                new Word(Opcode.LDI, 3, -1, 0),
+                new Word(Opcode.ADD, 3, 7, -1),
+                new Word(Opcode.LDI, 4, -1, 36), // posicao para qual ira pular (stop) *
+                new Word(Opcode.LDI, 1, -1, -1), // caso negativo
+                new Word(Opcode.STD, 1, -1, 41),
+                new Word(Opcode.JMPIL, 4, 7, -1), // pula pra stop caso negativo *
+                new Word(Opcode.JMPIE, 4, 7, -1), // pula pra stop caso 0
+                new Word(Opcode.ADDI, 7, -1, 41), // fibonacci + posição do stop
+                new Word(Opcode.LDI, 1, -1, 0),
+                new Word(Opcode.STD, 1, -1, 41), // 25 posicao de memoria onde inicia a serie de fibonacci gerada
+                new Word(Opcode.SUBI, 3, -1, 1), // se 1 pula pro stop
+                new Word(Opcode.JMPIE, 4, 3, -1),
+                new Word(Opcode.ADDI, 3, -1, 1),
+                new Word(Opcode.LDI, 2, -1, 1),
+                new Word(Opcode.STD, 2, -1, 42),
+                new Word(Opcode.SUBI, 3, -1, 2), // se 2 pula pro stop
+                new Word(Opcode.JMPIE, 4, 3, -1),
+                new Word(Opcode.LDI, 0, -1, 43),
+                new Word(Opcode.LDI, 6, -1, 25), // salva posição de retorno do loop
+                new Word(Opcode.LDI, 5, -1, 0), // salva tamanho
+                new Word(Opcode.ADD, 5, 7, -1),
+                new Word(Opcode.LDI, 7, -1, 0), // zera (inicio do loop)
+                new Word(Opcode.ADD, 7, 5, -1), // recarrega tamanho
+                new Word(Opcode.LDI, 3, -1, 0),
+                new Word(Opcode.ADD, 3, 1, -1),
+                new Word(Opcode.LDI, 1, -1, 0),
+                new Word(Opcode.ADD, 1, 2, -1),
+                new Word(Opcode.ADD, 2, 3, -1),
+                new Word(Opcode.STX, 0, 2, -1),
+                new Word(Opcode.ADDI, 0, -1, 1),
+                new Word(Opcode.SUB, 7, 0, -1),
+                new Word(Opcode.JMPIG, 6, 7, -1), // volta para o inicio do loop
+                new Word(Opcode.STOP, -1, -1, -1), // POS 36
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1), // POS 41
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1),
+                new Word(Opcode.DATA, -1, -1, -1)
 		};
 
 		public Word[] PB = new Word[] {
 				// dado um inteiro em alguma posição de memória,
 				// se for negativo armazena -1 na saída; se for positivo responde o fatorial do
 				// número na saída
-				new Word(Opcode.LDI, 0, -1, 7), // numero para colocar na memoria
-				new Word(Opcode.STD, 0, -1, 50),
-				new Word(Opcode.LDD, 0, -1, 50),
-				new Word(Opcode.LDI, 1, -1, -1),
-				new Word(Opcode.LDI, 2, -1, 13), // SALVAR POS STOP
-				new Word(Opcode.JMPIL, 2, 0, -1), // caso negativo pula pro STD
-				new Word(Opcode.LDI, 1, -1, 1),
-				new Word(Opcode.LDI, 6, -1, 1),
-				new Word(Opcode.LDI, 7, -1, 13),
-				new Word(Opcode.JMPIE, 7, 0, 0), // POS 9 pula pra STD (Stop-1)
-				new Word(Opcode.MULT, 1, 0, -1),
-				new Word(Opcode.SUB, 0, 6, -1),
-				new Word(Opcode.JMP, -1, -1, 9), // pula para o JMPIE
-				new Word(Opcode.STD, 1, -1, 15),
-				new Word(Opcode.STOP, -1, -1, -1), // POS 14
-				new Word(Opcode.DATA, -1, -1, -1) }; // POS 15
+                new Word(Opcode.LDI, 0, -1, 7), // numero para colocar na memoria
+                new Word(Opcode.STD, 0, -1, 50),
+                new Word(Opcode.LDD, 0, -1, 50),
+                new Word(Opcode.LDI, 1, -1, -1),
+                new Word(Opcode.LDI, 2, -1, 13), // SALVAR POS STOP
+                new Word(Opcode.JMPIL, 2, 0, -1), // caso negativo pula pro STD
+                new Word(Opcode.LDI, 1, -1, 1),
+                new Word(Opcode.LDI, 6, -1, 1),
+                new Word(Opcode.LDI, 7, -1, 13),
+                new Word(Opcode.JMPIE, 7, 0, 0), // POS 9 pula pra STD (Stop-1)
+                new Word(Opcode.MULT, 1, 0, -1),
+                new Word(Opcode.SUB, 0, 6, -1),
+                new Word(Opcode.JMP, -1, -1, 9), // pula para o JMPIE
+                new Word(Opcode.STD, 1, -1, 15),
+                new Word(Opcode.STOP, -1, -1, -1), // POS 14
+                new Word(Opcode.DATA, -1, -1, -1)}; // POS 15
 
 		public Word[] PC = new Word[] {
 				// Para um N definido (10 por exemplo)
@@ -933,11 +959,11 @@ public class Sistema {
 				// loop ate que não swap nada
 				// passando pelos N valores
 				// faz swap de vizinhos se da esquerda maior que da direita
-				new Word(Opcode.LDI, 7, -1, 5), // TAMANHO DO BUBBLE SORT (N)
-				new Word(Opcode.LDI, 6, -1, 5), // aux N
-				new Word(Opcode.LDI, 5, -1, 46), // LOCAL DA MEMORIA
-				new Word(Opcode.LDI, 4, -1, 47), // aux local memoria
-				new Word(Opcode.LDI, 0, -1, 4), // colocando valores na memoria
+				new Word(Opcode.LDI, 7, -1, 10), // Tamanho do vetor (N)
+				new Word(Opcode.LDI, 6, -1, 10), // Auxiliar N
+				new Word(Opcode.LDI, 5, -1, 46), // Local da memória para o vetor
+				new Word(Opcode.LDI, 4, -1, 47), // Auxiliar para local de memória
+				new Word(Opcode.LDI, 0, -1, 4), // Colocando valores na memória
 				new Word(Opcode.STD, 0, -1, 46),
 				new Word(Opcode.LDI, 0, -1, 3),
 				new Word(Opcode.STD, 0, -1, 47),
@@ -946,55 +972,51 @@ public class Sistema {
 				new Word(Opcode.LDI, 0, -1, 1),
 				new Word(Opcode.STD, 0, -1, 49),
 				new Word(Opcode.LDI, 0, -1, 2),
-				new Word(Opcode.STD, 0, -1, 50), // colocando valores na memoria até aqui - POS 13
-				new Word(Opcode.LDI, 3, -1, 25), // Posicao para pulo CHAVE 1
+				new Word(Opcode.STD, 0, -1, 50), // Colocando valores na memória até aqui
+				new Word(Opcode.LDI, 3, -1, 25), // Posição para pulo CHAVE 1
 				new Word(Opcode.STD, 3, -1, 99),
-				new Word(Opcode.LDI, 3, -1, 22), // Posicao para pulo CHAVE 2
+				new Word(Opcode.LDI, 3, -1, 22), // Posição para pulo CHAVE 2
 				new Word(Opcode.STD, 3, -1, 98),
-				new Word(Opcode.LDI, 3, -1, 38), // Posicao para pulo CHAVE 3
+				new Word(Opcode.LDI, 3, -1, 38), // Posição para pulo CHAVE 3
 				new Word(Opcode.STD, 3, -1, 97),
-				new Word(Opcode.LDI, 3, -1, 25), // Posicao para pulo CHAVE 4 (não usada)
-				new Word(Opcode.STD, 3, -1, 96),
-				new Word(Opcode.LDI, 6, -1, 0), // r6 = r7 - 1 POS 22
+				new Word(Opcode.LDI, 6, -1, 0), // r6 = r7 - 1
 				new Word(Opcode.ADD, 6, 7, -1),
-				new Word(Opcode.SUBI, 6, -1, 1), // ate aqui
-				new Word(Opcode.JMPIEM, -1, 6, 97), // CHAVE 3 para pular quando r7 for 1 e r6 0 para interomper o loop
-				// de vez
-				// do programa
-				new Word(Opcode.LDX, 0, 5, -1), // r0 e r1 pegando valores das posições da memoria POS 26
+				new Word(Opcode.SUBI, 6, -1, 1), // Fim do cálculo de r6
+				new Word(Opcode.JMPIEM, -1, 6, 97), // Salto para CHAVE 3 quando r7 for 1 e r6 0 para interromper o loop
+				new Word(Opcode.LDX, 0, 5, -1), // r0 e r1 pegando valores das posições da memória
 				new Word(Opcode.LDX, 1, 4, -1),
 				new Word(Opcode.LDI, 2, -1, 0),
 				new Word(Opcode.ADD, 2, 0, -1),
 				new Word(Opcode.SUB, 2, 1, -1),
 				new Word(Opcode.ADDI, 4, -1, 1),
 				new Word(Opcode.SUBI, 6, -1, 1),
-				new Word(Opcode.JMPILM, -1, 2, 99), // LOOP chave 1 caso neg procura prox
+				new Word(Opcode.JMPILM, -1, 2, 99), // Loop CHAVE 1: caso negativo, procura próximo
 				new Word(Opcode.STX, 5, 1, -1),
 				new Word(Opcode.SUBI, 4, -1, 1),
 				new Word(Opcode.STX, 4, 0, -1),
 				new Word(Opcode.ADDI, 4, -1, 1),
-				new Word(Opcode.JMPIGM, -1, 6, 99), // LOOP chave 1 POS 38
+				new Word(Opcode.JMPIGM, -1, 6, 99), // Loop CHAVE 1
 				new Word(Opcode.ADDI, 5, -1, 1),
 				new Word(Opcode.SUBI, 7, -1, 1),
-				new Word(Opcode.LDI, 4, -1, 0), // r4 = r5 + 1 POS 41
+				new Word(Opcode.LDI, 4, -1, 0), // r4 = r5 + 1
 				new Word(Opcode.ADD, 4, 5, -1),
-				new Word(Opcode.ADDI, 4, -1, 1), // ate aqui
-				new Word(Opcode.JMPIGM, -1, 7, 98), // LOOP chave 2
-				new Word(Opcode.STOP, -1, -1, -1), // POS 45
+				new Word(Opcode.ADDI, 4, -1, 1), // Fim do cálculo de r4
+				new Word(Opcode.JMPIGM, -1, 7, 98), // Loop CHAVE 2
+				new Word(Opcode.STOP, -1, -1, -1), // Fim do programa
+				new Word(Opcode.DATA, -1, -1, -1), // Dados adicionais
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1) };
+				new Word(Opcode.DATA, -1, -1, -1)};
 
 		public Word[] soma = new Word[] {
-				new Word(Opcode.LDI, 0, -1, 5), // Carrega o valor 5 para o registrador 0 (r0)
-				new Word(Opcode.ADDI, 0, -1, 5), // Soma 5 ao valor atual em r0
-				new Word(Opcode.STD, 0, -1, 5),
-				new Word(Opcode.STOP, -1, -1, -1)
+                new Word(Opcode.LDI, 0, -1, 5), // Carrega o valor 5 para o registrador 0 (r0)
+                new Word(Opcode.ADDI, 0, -1, 5), // Soma 5 ao valor atual em r0
+                new Word(Opcode.STD, 0, -1, 5),
+                new Word(Opcode.STOP, -1, -1, -1)
 		};
 	}
 }
