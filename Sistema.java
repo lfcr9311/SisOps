@@ -627,6 +627,7 @@ public class Sistema {
 		System.out.println("newAll =  Criar todos os processos");
 		System.out.println("dumpParcial =  Mostrar o conteúdo parcial da memória");
 		System.out.println("limpaMemoria =  Limpar toda a memória + processos");
+		System.out.println("mostraFrame =  Mostrar os frames da memória");
 		System.out.println("exit = Encerrar o programa");
 
 		System.out.print("\nDigite a opção desejada: ");
