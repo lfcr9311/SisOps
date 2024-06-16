@@ -134,7 +134,7 @@ public class Sistema {
 		}
 
 
-		public boolean criaProcesso(Word[] program) {
+		public void criaProcesso(Word[] program) {
 			int[] tabelaPaginas = memoria.aloca(program.length);
 			if(tabelaPaginas == null){
 				System.out.println("Memória insuficiente para alocar o processo.");
@@ -152,10 +152,8 @@ public class Sistema {
 					memoria.memoriaFisica[enderecoFisico].r1 = program[i].r1;
 					memoria.memoriaFisica[enderecoFisico].r2 = program[i].r2;
 					memoria.memoriaFisica[enderecoFisico].p = program[i].p;
+				}
 			}
-			return true;
-		}
-			return false;
 		}
 
 		public boolean desalocaProcesso(int id) {
