@@ -32,11 +32,9 @@ public class Sistema {
 			this.numeroFrames = size / tamPagina;
 			this.listaFrames = new boolean[numeroFrames];
 
-
 			for (int i = 0; i < listaFrames.length; i++) {
 				listaFrames[i] = true;
 			}
-
 
 			memoriaFisica = new Word[tamMemoria];
 			for (int i = 0; i < tamMemoria; i++) {
@@ -72,7 +70,7 @@ public class Sistema {
 			}
 			if (numFrames < numPaginas) {
 				System.out.println("Memória insuficiente para alocar o processo.");
-				
+
 				for (int i = 0; i < numFrames; i++) {
 					listaFrames[tabelaPaginas[i]] = true;
 				}
@@ -98,7 +96,6 @@ public class Sistema {
 				listaFrames[i] = true;
 			}
 		}
-
 
 		public void dump(Word w) {
 			System.out.print("[ ");
@@ -133,19 +130,18 @@ public class Sistema {
 			pcb = new ProcessControlBlock[mem.numeroFrames];
 		}
 
-
-		public void criaProcesso(Word[] program) {
+		public boolean criaProcesso(Word[] program) {
 			int[] tabelaPaginas = memoria.aloca(program.length);
-			if(tabelaPaginas == null){
+			if (tabelaPaginas == null) {
 				System.out.println("Memória insuficiente para alocar o processo.");
-			}else{
+			} else {
 				ProcessControlBlock newpcb = new ProcessControlBlock(id);
 				newpcb.tabelaPaginas = tabelaPaginas;
 				newpcb.processState = true;
 				newpcb.running = false;
 				this.pcb[id] = newpcb;
 				id++;
-			
+
 				for (int i = 0; i < program.length; i++) {
 					int enderecoFisico = memoria.enderecoFisico(i, tabelaPaginas);
 					memoria.memoriaFisica[enderecoFisico].opc = program[i].opc;
@@ -153,7 +149,9 @@ public class Sistema {
 					memoria.memoriaFisica[enderecoFisico].r2 = program[i].r2;
 					memoria.memoriaFisica[enderecoFisico].p = program[i].p;
 				}
+				return true;
 			}
+			return false;
 		}
 
 		public boolean desalocaProcesso(int id) {
@@ -181,7 +179,6 @@ public class Sistema {
 		}
 	}
 
-
 	public static class ProcessControlBlock {
 		public int[] tabelaPaginas;
 		public boolean processState;
@@ -202,7 +199,7 @@ public class Sistema {
 	// --------------------- C P U - definicoes da CPU
 	// -----------------------------------------------------
 
-	public class CPU {
+	public class CPU extends Thread {
 		private int maxInt; // valores maximo e minimo para inteiros nesta cpu
 		private int minInt;
 		private boolean trace;
@@ -278,188 +275,155 @@ public class Sistema {
 					}
 					// --------------------------------------------------------------------------------------------------
 					// EXECUTA INSTRUCAO NO ir
-					switch (ir.opc) { // conforme o opcode (código de operação) executa
-
-						// Instrucoes de Busca e Armazenamento em Memoria
-						case LDI: // Rd <- k
+					switch (ir.opc) {
+						case LDI:
 							reg[ir.r1] = ir.p;
 							pc++;
 							break;
-
-						case LDD: // Rd <- [A]
-							if (legal(ir.p)) {
-								reg[ir.r1] = m[ir.p].p;
+						case LDD:
+							if (legal(mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas))) {
+								reg[ir.r1] = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
 								pc++;
 							}
 							break;
-
-						case LDX: // RD <- [RS] // NOVA
-							if (legal(reg[ir.r2])) {
-								reg[ir.r1] = m[reg[ir.r2]].p;
+						case LDX:
+							if (legal(mem.enderecoFisico(reg[ir.r2], pm.status.tabelaPaginas))) {
+								reg[ir.r1] = m[mem.enderecoFisico(reg[ir.r2], pm.status.tabelaPaginas)].p;
 								pc++;
 							}
 							break;
-
-						case STD: // [A] <- Rs
-							if (legal(ir.p)) {
-								m[ir.p].opc = Opcode.DATA;
-								m[ir.p].p = reg[ir.r1];
+						case STD:
+							if (legal(mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas))) {
+								m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].opc = Opcode.DATA;
+								m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p = reg[ir.r1];
 								pc++;
 							}
-							;
 							break;
-
-						case STX: // [Rd] <-Rs
-							if (legal(reg[ir.r1])) {
-								m[reg[ir.r1]].opc = Opcode.DATA;
-								m[reg[ir.r1]].p = reg[ir.r2];
+						case STX:
+							if (legal(mem.enderecoFisico(reg[ir.r1], pm.status.tabelaPaginas))) {
+								m[mem.enderecoFisico(reg[ir.r1], pm.status.tabelaPaginas)].opc = Opcode.DATA;
+								m[mem.enderecoFisico(reg[ir.r1], pm.status.tabelaPaginas)].p = reg[ir.r2];
 								pc++;
 							}
-							;
 							break;
-
-						case MOVE: // RD <- RS
+						case MOVE:
 							reg[ir.r1] = reg[ir.r2];
 							pc++;
 							break;
-
-						// Instrucoes Aritmeticas
-						case ADD: // Rd <- Rd + Rs
+						case ADD:
 							reg[ir.r1] = reg[ir.r1] + reg[ir.r2];
 							testOverflow(reg[ir.r1]);
 							pc++;
 							break;
-
-						case ADDI: // Rd <- Rd + k
+						case ADDI:
 							reg[ir.r1] = reg[ir.r1] + ir.p;
 							testOverflow(reg[ir.r1]);
 							pc++;
 							break;
-
-						case SUB: // Rd <- Rd - Rs
+						case SUB:
 							reg[ir.r1] = reg[ir.r1] - reg[ir.r2];
 							testOverflow(reg[ir.r1]);
 							pc++;
 							break;
-
-						case SUBI: // RD <- RD - k // NOVA
+						case SUBI:
 							reg[ir.r1] = reg[ir.r1] - ir.p;
 							testOverflow(reg[ir.r1]);
 							pc++;
 							break;
-
-						case MULT: // Rd <- Rd * Rs
+						case MULT:
 							reg[ir.r1] = reg[ir.r1] * reg[ir.r2];
 							testOverflow(reg[ir.r1]);
 							pc++;
 							break;
-
-						// Instrucoes JUMP
-						case JMP: // PC <- k
+						case JMP:
 							pc = ir.p;
 							break;
-
-						case JMPIG: // If Rc > 0 Then PC <- Rs Else PC <- PC +1
+						case JMPIG:
 							if (reg[ir.r2] > 0) {
 								pc = reg[ir.r1];
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIGK: // If RC > 0 then PC <- k else PC++
+						case JMPIGK:
 							if (reg[ir.r2] > 0) {
 								pc = ir.p;
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPILK: // If RC < 0 then PC <- k else PC++
+						case JMPILK:
 							if (reg[ir.r2] < 0) {
 								pc = ir.p;
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIEK: // If RC = 0 then PC <- k else PC++
+						case JMPIEK:
 							if (reg[ir.r2] == 0) {
 								pc = ir.p;
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIL: // if Rc < 0 then PC <- Rs Else PC <- PC +1
+						case JMPIL:
 							if (reg[ir.r2] < 0) {
 								pc = reg[ir.r1];
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIE: // If Rc = 0 Then PC <- Rs Else PC <- PC +1
+						case JMPIE:
 							if (reg[ir.r2] == 0) {
 								pc = reg[ir.r1];
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIM: // PC <- [A]
-							pc = m[ir.p].p;
+						case JMPIM:
+							pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
 							break;
-
-						case JMPIGM: // If RC > 0 then PC <- [A] else PC++
+						case JMPIGM:
 							if (reg[ir.r2] > 0) {
-								pc = m[ir.p].p;
+								pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPILM: // If RC < 0 then PC <- k else PC++
+						case JMPILM:
 							if (reg[ir.r2] < 0) {
-								pc = m[ir.p].p;
+								pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIEM: // If RC = 0 then PC <- k else PC++
+						case JMPIEM:
 							if (reg[ir.r2] == 0) {
-								pc = m[ir.p].p;
+								pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
 							} else {
 								pc++;
 							}
 							break;
-
-						case JMPIGT: // If RS>RC then PC <- k else PC++
+						case JMPIGT:
 							if (reg[ir.r1] > reg[ir.r2]) {
 								pc = ir.p;
 							} else {
 								pc++;
 							}
 							break;
-
-						// outras
-						case STOP: // por enquanto, para execucao
-							irpt = Interrupts.intSTOP;
-							pm.desalocaProcesso(pm.status.id);
-							break;
-
-						case DATA:
-							irpt = Interrupts.intInstrucaoInvalida;
-							break;
-
 						// Chamada de sistema
 						case SYSCALL:
 							sysCall.handle(); // <<<<< aqui desvia para rotina de chamada de sistema, no momento so
 							// temos IO
 							pc++;
 							break;
-
+						case STOP:
+							irpt = Interrupts.intSTOP;
+							pm.desalocaProcesso(pm.status.id);
+							break;
+						case DATA:
+							irpt = Interrupts.intInstrucaoInvalida;
+							break;
 						// Inexistente
 						default:
 							irpt = Interrupts.intInstrucaoInvalida;
@@ -655,9 +619,6 @@ public class Sistema {
 							case "pb":
 								pm.criaProcesso(progs.PB);
 								break;
-							case "pc":
-								pm.criaProcesso(progs.PC);
-								break;
 							case "soma":
 								pm.criaProcesso(progs.soma);
 								break;
@@ -673,7 +634,7 @@ public class Sistema {
 					}
 					break;
 
-				//Esse método adiciona todos os processos
+				// Esse método adiciona todos os processos
 				case "newAll":
 					try {
 						pm.criaProcesso(progs.fatorial);
@@ -682,15 +643,14 @@ public class Sistema {
 						pm.criaProcesso(progs.fatorialSYSCALL);
 						pm.criaProcesso(progs.progMinimo);
 						pm.criaProcesso(progs.PB);
-						pm.criaProcesso(progs.PC);
 						pm.criaProcesso(progs.soma);
 					} catch (Exception e) {
 						System.out.println("Ocorreu um erro ao criar processos.");
 					}
 					break;
 
-				//Metodo adicional caso queira limpar a memoria
-				//desacola todos processos e limpa a memoria
+				// Metodo adicional caso queira limpar a memoria
+				// desacola todos processos e limpa a memoria
 				case "limpaMemoria":
 					pm.status = null;
 					for (int i = 0; i < pm.pcb.length; i++) {
@@ -743,7 +703,7 @@ public class Sistema {
 					}
 					break;
 
-				//Metodo adicional caso queira imprimir uma parte da memoria
+				// Metodo adicional caso queira imprimir uma parte da memoria
 				case "dumpParcial":
 					try {
 						int inicio = Integer.parseInt(opcao.split(" ")[1]);
@@ -769,6 +729,17 @@ public class Sistema {
 						System.out.println("Argumento inválido para executar o processo.");
 					}
 					break;
+				case "execAll":
+					try {
+						for (int i = 0; i < pm.pcb.length; i++) {
+							if (pm.pcb[i] != null) {
+								pm.executaProcesso(i);
+							}
+						}
+					} catch (Exception e) {
+						System.out.println("Ocorreu um erro ao executar os processos.");
+					}
+				break;
 
 				case "mostraFrame":
 					for (int i = 0; i < s.vm.mem.numeroFrames; i++) {
@@ -814,7 +785,7 @@ public class Sistema {
 	}
 
 	public static class Programas {
-		public Word[] fatorial = new Word[]{
+		public Word[] fatorial = new Word[] {
 				// este fatorial so aceita valores positivos. nao pode ser zero
 				new Word(Opcode.LDI, 0, -1, 4), // 0 r0 é valor a calcular fatorial
 				new Word(Opcode.LDI, 1, -1, 1), // 1 r1 é 1 para multiplicar (por r0)
@@ -824,27 +795,27 @@ public class Sistema {
 				new Word(Opcode.MULT, 1, 0, -1), // 5 r1 = r1 * r0
 				new Word(Opcode.SUB, 0, 6, -1), // 6 decrementa r0 1
 				new Word(Opcode.JMP, -1, -1, 4), // 7 vai p posicao 4
-				new Word(Opcode.STD, 1, -1, 10), // 8 coloca valor de r1 na posição 10
+				new Word(Opcode.STD, 1, -1, 25), // 8 coloca valor de r1 na posição 10
 				new Word(Opcode.STOP, -1, -1, -1), // 9 stop
-				new Word(Opcode.DATA, -1, -1, -1)}; // 10 ao final o valor do fatorial estará na posição 10 da memória
+				new Word(Opcode.DATA, -1, -1, -1) }; // 10 ao final o valor do fatorial estará na posição 10 da memória
 
-		public Word[] progMinimo = new Word[]{
+		public Word[] progMinimo = new Word[] {
 				new Word(Opcode.LDI, 0, -1, 999),
 				new Word(Opcode.STD, 0, -1, 10),
 				new Word(Opcode.STD, 0, -1, 11),
 				new Word(Opcode.STD, 0, -1, 12),
 				new Word(Opcode.STD, 0, -1, 13),
 				new Word(Opcode.STD, 0, -1, 14),
-				new Word(Opcode.STOP, -1, -1, -1)};
+				new Word(Opcode.STOP, -1, -1, -1) };
 
-		public Word[] fibonacci10 = new Word[]{ // mesmo que prog exemplo, so que usa r0 no lugar de r8
+		public Word[] fibonacci10 = new Word[] { // mesmo que prog exemplo, so que usa r0 no lugar de r8
 				new Word(Opcode.LDI, 1, -1, 0),
 				new Word(Opcode.STD, 1, -1, 20),
 				new Word(Opcode.LDI, 2, -1, 1),
 				new Word(Opcode.STD, 2, -1, 21),
 				new Word(Opcode.LDI, 0, -1, 22),
 				new Word(Opcode.LDI, 6, -1, 6),
-				new Word(Opcode.LDI, 7, -1, 31),
+				new Word(Opcode.LDI, 7, -1, 25),
 				new Word(Opcode.LDI, 3, -1, 0),
 				new Word(Opcode.ADD, 3, 1, -1),
 				new Word(Opcode.LDI, 1, -1, 0),
@@ -867,9 +838,9 @@ public class Sistema {
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
 				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1)}; // ate aqui - serie de fibonacci ficara armazenada
+				new Word(Opcode.DATA, -1, -1, -1) }; // ate aqui - serie de fibonacci ficara armazenada
 
-		public Word[] fatorialSYSCALL = new Word[]{
+		public Word[] fatorialSYSCALL = new Word[] {
 				new Word(Opcode.LDI, 0, -1, 7), // numero para colocar na memoria
 				new Word(Opcode.STD, 0, -1, 50),
 				new Word(Opcode.LDD, 0, -1, 50),
@@ -888,9 +859,9 @@ public class Sistema {
 				new Word(Opcode.LDI, 9, -1, 18), // endereco com valor a escrever
 				new Word(Opcode.SYSCALL, -1, -1, -1),
 				new Word(Opcode.STOP, -1, -1, -1), // POS 17
-				new Word(Opcode.DATA, -1, -1, -1)};// POS 18
+				new Word(Opcode.DATA, -1, -1, -1) };// POS 18
 
-		public Word[] fibonacciSYSCALL = new Word[]{ // mesmo que prog exemplo, so que usa r0 no lugar de r8
+		public Word[] fibonacciSYSCALL = new Word[] { // mesmo que prog exemplo, so que usa r0 no lugar de r8
 				new Word(Opcode.LDI, 8, -1, 1), // leitura
 				new Word(Opcode.LDI, 9, -1, 100), // endereco a guardar
 				new Word(Opcode.SYSCALL, -1, -1, -1),
@@ -949,7 +920,7 @@ public class Sistema {
 				new Word(Opcode.DATA, -1, -1, -1)
 		};
 
-		public Word[] PB = new Word[]{
+		public Word[] PB = new Word[] {
 				// dado um inteiro em alguma posição de memória,
 				// se for negativo armazena -1 na saída; se for positivo responde o fatorial do
 				// número na saída
@@ -968,80 +939,16 @@ public class Sistema {
 				new Word(Opcode.JMP, -1, -1, 9), // pula para o JMPIE
 				new Word(Opcode.STD, 1, -1, 15),
 				new Word(Opcode.STOP, -1, -1, -1), // POS 14
-				new Word(Opcode.DATA, -1, -1, -1)}; // POS 15
+				new Word(Opcode.DATA, -1, -1, -1) }; // POS 15
 
-		public Word[] PC = new Word[]{
-				// Para um N definido (10 por exemplo)
-				// o programa ordena um vetor de N números em alguma posição de memória;
-				// ordena usando bubble sort
-				// loop ate que não swap nada
-				// passando pelos N valores
-				// faz swap de vizinhos se da esquerda maior que da direita
-				new Word(Opcode.LDI, 7, -1, 5), // TAMANHO DO BUBBLE SORT (N)
-				new Word(Opcode.LDI, 6, -1, 5), // aux N
-				new Word(Opcode.LDI, 5, -1, 46), // LOCAL DA MEMORIA
-				new Word(Opcode.LDI, 4, -1, 47), // aux local memoria
-				new Word(Opcode.LDI, 0, -1, 4), // colocando valores na memoria
-				new Word(Opcode.STD, 0, -1, 46),
-				new Word(Opcode.LDI, 0, -1, 3),
-				new Word(Opcode.STD, 0, -1, 47),
-				new Word(Opcode.LDI, 0, -1, 5),
-				new Word(Opcode.STD, 0, -1, 48),
-				new Word(Opcode.LDI, 0, -1, 1),
-				new Word(Opcode.STD, 0, -1, 49),
-				new Word(Opcode.LDI, 0, -1, 2),
-				new Word(Opcode.STD, 0, -1, 50), // colocando valores na memoria até aqui - POS 13
-				new Word(Opcode.LDI, 3, -1, 25), // Posicao para pulo CHAVE 1
-				new Word(Opcode.STD, 3, -1, 99),
-				new Word(Opcode.LDI, 3, -1, 22), // Posicao para pulo CHAVE 2
-				new Word(Opcode.STD, 3, -1, 98),
-				new Word(Opcode.LDI, 3, -1, 38), // Posicao para pulo CHAVE 3
-				new Word(Opcode.STD, 3, -1, 97),
-				new Word(Opcode.LDI, 3, -1, 25), // Posicao para pulo CHAVE 4 (não usada)
-				new Word(Opcode.STD, 3, -1, 96),
-				new Word(Opcode.LDI, 6, -1, 0), // r6 = r7 - 1 POS 22
-				new Word(Opcode.ADD, 6, 7, -1),
-				new Word(Opcode.SUBI, 6, -1, 1), // ate aqui
-				new Word(Opcode.JMPIEM, -1, 6, 97), // CHAVE 3 para pular quando r7 for 1 e r6 0 para interomper o loop
-				// de vez
-				// do programa
-				new Word(Opcode.LDX, 0, 5, -1), // r0 e r1 pegando valores das posições da memoria POS 26
-				new Word(Opcode.LDX, 1, 4, -1),
-				new Word(Opcode.LDI, 2, -1, 0),
-				new Word(Opcode.ADD, 2, 0, -1),
-				new Word(Opcode.SUB, 2, 1, -1),
-				new Word(Opcode.ADDI, 4, -1, 1),
-				new Word(Opcode.SUBI, 6, -1, 1),
-				new Word(Opcode.JMPILM, -1, 2, 99), // LOOP chave 1 caso neg procura prox
-				new Word(Opcode.STX, 5, 1, -1),
-				new Word(Opcode.SUBI, 4, -1, 1),
-				new Word(Opcode.STX, 4, 0, -1),
-				new Word(Opcode.ADDI, 4, -1, 1),
-				new Word(Opcode.JMPIGM, -1, 6, 99), // LOOP chave 1 POS 38
-				new Word(Opcode.ADDI, 5, -1, 1),
-				new Word(Opcode.SUBI, 7, -1, 1),
-				new Word(Opcode.LDI, 4, -1, 0), // r4 = r5 + 1 POS 41
-				new Word(Opcode.ADD, 4, 5, -1),
-				new Word(Opcode.ADDI, 4, -1, 1), // ate aqui
-				new Word(Opcode.JMPIGM, -1, 7, 98), // LOOP chave 2
-				new Word(Opcode.STOP, -1, -1, -1), // POS 45
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1),
-				new Word(Opcode.DATA, -1, -1, -1)};
-
-		public Word[] soma = new Word[]{
+		public Word[] soma = new Word[] {
 				new Word(Opcode.LDI, 0, -1, 5),
 				new Word(Opcode.ADDI, 0, -1, 5),
 				new Word(Opcode.STD, 0, -1, 6),
 				new Word(Opcode.STOP, -1, -1, -1)
 		};
 
-		public Word[] subtrai = new Word[]{
+		public Word[] subtrai = new Word[] {
 				new Word(Opcode.LDI, 0, -1, 50),
 				new Word(Opcode.SUBI, 0, -1, 5),
 				new Word(Opcode.STD, 0, -1, 14),
