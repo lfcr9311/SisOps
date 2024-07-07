@@ -1,3 +1,3 @@
 public enum Interrupts { 
-    noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP;
+    noInterrupt, intEnderecoInvalido, intInstrucaoInvalida, intOverflow, intSTOP, intFATIATEMPO, intIO, intSAIDOIO;
 }

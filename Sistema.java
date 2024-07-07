@@ -130,51 +130,68 @@ public class Sistema {
 		private Queue<String> intel;
 		private Semaphore semaforoIntel;
 		private List<ProcessControlBlock> prontos;
+		private List<ProcessControlBlock> bloqueados;
 		private Semaphore semaforoCpu;
 
-		public ProcessManager(Memory mem, Queue<String> intel, Semaphore semaforoIntel, List<ProcessControlBlock> prontos,
-				Semaphore semaforoCpu) {
+		public ProcessManager(Memory mem, Queue<String> intel, Semaphore semaforoIntel,
+				List<ProcessControlBlock> prontos,
+				Semaphore semaforoCpu, List<ProcessControlBlock> bloqueados) {
 			id = 0;
 			this.memoria = mem;
 			this.intel = intel;
 			this.semaforoIntel = semaforoIntel;
 			this.prontos = prontos;
+			this.bloqueados = bloqueados;
 			this.semaforoCpu = semaforoCpu;
 			pcb = new ProcessControlBlock[mem.numeroFrames];
 		}
 
 		public boolean criaProcesso(Word[] program) {
 			int[] tabelaPaginas = memoria.aloca(program.length);
-			if (tabelaPaginas == null) {
-				System.out.println("Memória insuficiente para alocar o processo.");
-			} else {
+			if (tabelaPaginas != null) {
 				ProcessControlBlock newpcb = new ProcessControlBlock(id);
 				newpcb.tabelaPaginas = tabelaPaginas;
 				newpcb.processState = true;
 				newpcb.running = false;
-				this.pcb[id] = newpcb;
-				id++;
+				try {
+					semaforoCpu.acquire();
+					pcb[id] = newpcb;
+					id++;
 
-				for (int i = 0; i < program.length; i++) {
-					int enderecoFisico = memoria.enderecoFisico(i, tabelaPaginas);
-					memoria.memoriaFisica[enderecoFisico].opc = program[i].opc;
-					memoria.memoriaFisica[enderecoFisico].r1 = program[i].r1;
-					memoria.memoriaFisica[enderecoFisico].r2 = program[i].r2;
-					memoria.memoriaFisica[enderecoFisico].p = program[i].p;
+					for (int i = 0; i < program.length; i++) {
+						int enderecoFisico = memoria.enderecoFisico(i, tabelaPaginas);
+						memoria.memoriaFisica[enderecoFisico].opc = program[i].opc;
+						memoria.memoriaFisica[enderecoFisico].r1 = program[i].r1;
+						memoria.memoriaFisica[enderecoFisico].r2 = program[i].r2;
+						memoria.memoriaFisica[enderecoFisico].p = program[i].p;
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				} finally {
+					semaforoCpu.release();
+				}
+			} else {
+				System.out.println("Não foi possível alocar memória para o processo.");
+				return false;
+			}
+			return true;
+		}
+
+		public boolean desalocaProcesso(int id) {
+			ProcessControlBlock pcb2 = getProcessControlBlock(id);
+			if (pcb2 != null && pcb2.running == false) {
+				memoria.desaloca(pcb2.tabelaPaginas);
+				try {
+					semaforoCpu.acquire();
+					pcb[id] = null;
+				} catch (Exception e) {
+					e.printStackTrace();
+				} finally {
+					semaforoCpu.release();
 				}
 				return true;
 			}
 			return false;
-		}
-
-		public boolean desalocaProcesso(int id) {
-			if (pcb[id] == null) {
-				return false;
-			} else {
-				memoria.desaloca(pcb[id].tabelaPaginas);
-				pcb[id] = null;
-				return true;
-			}
 		}
 
 		public boolean executaProcesso(int id) {
@@ -208,6 +225,55 @@ public class Sistema {
 				status = pcb;
 				return status;
 			} catch (InterruptedException e) {
+				e.printStackTrace();
+				return null;
+			} finally {
+				semaforoCpu.release();
+			}
+		}
+
+		public void setStatusPronto(boolean ready) {
+			try {
+				semaforoCpu.acquire();
+				status.processState = ready;
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} finally {
+				semaforoCpu.release();
+			}
+		}
+
+		public void setStatusRodando(boolean running) {
+			try {
+				semaforoCpu.acquire();
+				status.running = running;
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} finally {
+				semaforoCpu.release();
+			}
+		}
+
+		public void setStatusBloqueado(int blocked) {
+			try {
+				semaforoCpu.acquire();
+				bloqueados.add(pcb[blocked]);
+				pcb[blocked].running = false;
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} finally {
+				semaforoCpu.release();
+			}
+		}
+
+		public ProcessControlBlock getProcessControlBlock(int id) {
+			if (id < 0 && id >= pcb.length) {
+				return null;
+			}
+			try {
+				semaforoCpu.acquire();
+				return pcb[id];
+			} catch (Exception e) {
 				e.printStackTrace();
 				return null;
 			} finally {
@@ -274,8 +340,6 @@ public class Sistema {
 								}
 								break;
 
-							// Metodo adicional caso queira limpar a memoria
-							// desacola todos processos e limpa a memoria
 							case "limpaMemoria":
 								status = null;
 								for (int i = 0; i < pcb.length; i++) {
@@ -328,7 +392,6 @@ public class Sistema {
 								}
 								break;
 
-							// Metodo adicional caso queira imprimir uma parte da memoria
 							case "dumpParcial":
 								try {
 									int inicio = Integer.parseInt(opcao.split(" ")[1]);
@@ -381,6 +444,13 @@ public class Sistema {
 							case "exit":
 								System.exit(0);
 								break;
+
+							case "in":
+							try {
+								
+							} catch (Exception e) {
+								System.out.println("Ocorreu um erro ao realizar a entrada de dados.");
+							}
 							default:
 								System.out.println("Opção inválida");
 								break;
@@ -440,10 +510,15 @@ public class Sistema {
 		public Semaphore semaforoCpu;
 		public Queue<String> intel;
 		public List<ProcessControlBlock> pcb;
+		public List<ProcessControlBlock> pcbBloqueados;
+		public Semaphore semaforoIO;
 
-		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug, Semaphore semaforoIntel,
+
+		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug,
+				Semaphore semaforoIntel,
 				Queue<String> _intel) {
-			fatiaTempo = 2;
+
+			fatiaTempo = 1;
 			maxInt = 32767; // capacidade de representacao modelada
 			minInt = -32767; // se exceder deve gerar interrupcao de overflow
 			mem = _mem; // usa mem para acessar funcoes auxiliares (dump)
@@ -455,8 +530,9 @@ public class Sistema {
 			intel = _intel;
 			this.semaforoIntel = semaforoIntel;
 			pcb = new ArrayList<ProcessControlBlock>();
+			pcbBloqueados = new ArrayList<ProcessControlBlock>();
 			semaforoCpu = new Semaphore(1);
-			pm = new ProcessManager(mem, _intel, semaforoIntel, pcb, semaforoCpu);
+			pm = new ProcessManager(mem, _intel, semaforoIntel, pcb, semaforoCpu, pcbBloqueados);
 			trace = true;
 		}
 
@@ -464,7 +540,7 @@ public class Sistema {
 			if (e >= 0 && e < mem.tamMemoria) {
 				return true;
 			} else {
-				irpt = Interrupts.intEnderecoInvalido; // Set the interrupt type if illegal
+				irpt = Interrupts.intEnderecoInvalido;
 				return false;
 			}
 		}
@@ -483,6 +559,78 @@ public class Sistema {
 			reg = _reg; // limite e pc (deve ser zero nesta versao)
 			pc = _pc; // limite e pc (deve ser zero nesta versao)
 			irpt = Interrupts.noInterrupt; // reset da interrupcao registrada
+		}
+
+		public void gerenciaInterrupcao() {
+			switch (irpt) {
+				case intEnderecoInvalido:
+
+					System.out.println("Endereco Invalido");
+					pm.setStatusRodando(false);
+					pm.desalocaProcesso(pm.status.id);
+					break;
+
+				case intInstrucaoInvalida:
+					System.out.println("Instrucao Invalida");
+					pm.setStatusRodando(false);
+					pm.desalocaProcesso(pm.status.id);
+					break;
+
+				case intOverflow:
+					System.out.println("Overflow");
+					pm.setStatusRodando(false);
+					pm.desalocaProcesso(pm.status.id);
+					break;
+
+				case intFATIATEMPO:
+					System.out.println("Fatia de tempo esgotada");
+					pm.salvaProcessoCpu();
+					pm.setStatusRodando(false);
+					try {
+						semaforoCpu.acquire();
+						pcb.add(pm.status);
+						semaforoCpu.release();
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+					break;
+
+				case intIO:
+					try {
+						System.out.println("I/O solicitada");
+						semaforoCpu.acquire();
+						pm.salvaProcessoCpu();
+						pm.setStatusBloqueado(pm.status.id);
+						System.out.println(pcbBloqueados.size());
+
+						break;
+
+					} catch (Exception e) {
+						e.printStackTrace();
+					} finally {
+						semaforoCpu.release();
+					}
+
+				case intSTOP:
+					System.out.println("Parada solicitada");
+					pm.setStatusRodando(false);
+					pm.desalocaProcesso(pm.status.id);
+					break;
+
+				case intSAIDOIO:
+					try {
+						semaforoCpu.acquire();
+						pm.setStatusPronto(true);
+						System.out.println("I/O finalizada");
+						break;
+					} catch (Exception e) {
+						e.printStackTrace();
+					} finally {
+						semaforoCpu.release();
+					}
+				default:
+					break;
+			}
 		}
 
 		public void run() {
@@ -510,7 +658,12 @@ public class Sistema {
 		}
 
 		public void executaCpu() {
+			int contador = 0;
 			while (true) {
+				if (contador == fatiaTempo) {
+					irpt = Interrupts.intFATIATEMPO;
+				}
+
 				if (legal(pc)) {
 					ir = m[mem.enderecoFisico(pc, pm.status.tabelaPaginas)];
 					if (trace) {
@@ -662,6 +815,8 @@ public class Sistema {
 							irpt = Interrupts.intInstrucaoInvalida;
 							break;
 						case SYSCALL:
+							irpt = Interrupts.intIO;
+
 							pc++;
 							break;
 						default:
@@ -671,9 +826,10 @@ public class Sistema {
 				}
 				// VERIFICA INTERRUPÇÃO !!! - TERCEIRA FASE DO CICLO DE INSTRUÇÕES
 				if (!(irpt == Interrupts.noInterrupt)) { // existe interrupção
-					ih.handle(irpt, pc); // desvia para rotina de tratamento
+					gerenciaInterrupcao(); // desvia para rotina de tratamento
 					break; // break sai do loop da cpu
 				}
+				contador++;
 			} // FIM DO CICLO DE UMA INSTRUÇÃO
 		}
 	}
@@ -739,29 +895,7 @@ public class Sistema {
 		public void setVM(VM _vm) {
 			vm = _vm;
 		}
-
-		public void handle() { // handle system calls based on the operation code
-			int syscallCode = vm.cpu.reg[8];
-			int parameter = vm.cpu.reg[9];
-			switch (syscallCode) {
-				case 1: // Input
-					Scanner scanner = new Scanner(System.in);
-					System.out.print("Enter an integer: ");
-					int input = scanner.nextInt();
-					vm.cpu.mem.memoriaFisica[parameter].p = input;
-					break;
-				case 2: // Output
-					int output = vm.cpu.mem.memoriaFisica[parameter].p;
-
-					System.out.println("Output: " + output);
-					break;
-				default:
-					System.out.println("Unsupported system call: " + syscallCode);
-					vm.cpu.irpt = Interrupts.intInstrucaoInvalida;
-					break;
-			}
 		}
-	}
 
 	// ------------------ U T I L I T A R I O S D O S I S T E M A
 	// -----------------------------------------
@@ -791,6 +925,38 @@ public class Sistema {
 		vm = new VM(ih, sysCall);
 		sysCall.setVM(vm);
 		progs = new Programas();
+	}
+
+	public class gerenciaSysCallThread extends Thread {
+		
+		List<ProcessControlBlock> bloqueados;
+		List<ProcessControlBlock> prontos;
+		Semaphore semaforoIO;
+
+		gerenciaSysCallThread(List<ProcessControlBlock> bloqueados, Semaphore semaforoIO, List<ProcessControlBlock> prontos) {
+			this.bloqueados = bloqueados;
+			this.semaforoIO = semaforoIO;
+			this.prontos = prontos;
+			
+			try {
+				semaforoIO.acquire();
+					if (!bloqueados.isEmpty()) {
+						ProcessControlBlock process = bloqueados.remove(0);
+						Scanner scanner = new Scanner(System.in);
+						int input = scanner.nextInt();
+						process.registrador[8] = input;
+						prontos.add(process);
+						
+					}
+					semaforoIO.release();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}finally{
+				semaforoIO.release();
+			}
+
+		}
 	}
 
 	public class ShellThread extends Thread {
@@ -886,7 +1052,7 @@ public class Sistema {
 				new Word(Opcode.MULT, 1, 0, -1), // 5 r1 = r1 * r0
 				new Word(Opcode.SUB, 0, 6, -1), // 6 decrementa r0 1
 				new Word(Opcode.JMP, -1, -1, 4), // 7 vai p posicao 4
-				new Word(Opcode.STD, 1, -1, 25), // 8 coloca valor de r1 na posição 10
+				new Word(Opcode.STD, 1, -1, 10), // 8 coloca valor de r1 na posição 10
 				new Word(Opcode.STOP, -1, -1, -1), // 9 stop
 				new Word(Opcode.DATA, -1, -1, -1) }; // 10 ao final o valor do fatorial estará na posição 10 da memória
 
@@ -1037,10 +1203,22 @@ public class Sistema {
 		};
 
 		public Word[] subtrai = new Word[] {
-				new Word(Opcode.LDI, 0, -1, 50),
-				new Word(Opcode.SUBI, 0, -1, 5),
-				new Word(Opcode.STD, 0, -1, 5),
-				new Word(Opcode.STOP, -1, -1, -1)
+				new Word(Opcode.LDI, 0, -1, 1), // Carrega o valor 1 no registrador 0
+				new Word(Opcode.STD, 0, -1, 11), // Armazena o valor do registrador 0 na posição de memória 11
+				new Word(Opcode.LDI, 1, -1, 2), // Carrega o valor 2 no registrador 1
+				new Word(Opcode.STD, 1, -1, 12), // Armazena o valor do registrador 1 na posição de memória 12
+				new Word(Opcode.LDI, 8, -1, 1), // Carrega o código da syscall no registrador 8
+				new Word(Opcode.LDI, 9, -1, 8), // Carrega o parâmetro da syscall no registrador 9
+				new Word(Opcode.SYSCALL, -1, -1, -1), // Chamada de sistema para IO
+				new Word(Opcode.JMP, -1, -1, 1), // Pula para a instrução na posição de memória 1 (loop infinito)
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1), // Espaço de dados
+				new Word(Opcode.DATA, -1, -1, -1) // Espaço de dados
 		};
-	}
+	};
 }
