@@ -8,6 +8,7 @@
 // Funcionalidades de carga, execução e dump de memória
 
 import java.util.*;
+import java.util.concurrent.Semaphore;
 
 public class Sistema {
 
@@ -45,8 +46,11 @@ public class Sistema {
 		public int enderecoFisico(int enderecoLogico, int[] tabelaPaginas) {
 			int numeroPagina = enderecoLogico / tamPagina;
 			int offset = enderecoLogico % tamPagina;
+			if (numeroPagina >= tabelaPaginas.length) {
+				System.out.println("Endereço de memória inválido.");
+				return -1;
+			}
 			int frame = tabelaPaginas[numeroPagina];
-
 			return frame * tamPagina + offset;
 		}
 
@@ -118,15 +122,24 @@ public class Sistema {
 		}
 	}
 
-	public class ProcessManager {
+	public class ProcessManager extends Thread {
 		private final Memory memoria;
 		private int id;
 		private final ProcessControlBlock[] pcb;
 		private ProcessControlBlock status;
+		private Queue<String> intel;
+		private Semaphore semaforoIntel;
+		private List<ProcessControlBlock> prontos;
+		private Semaphore semaforoCpu;
 
-		public ProcessManager(Memory mem) {
+		public ProcessManager(Memory mem, Queue<String> intel, Semaphore semaforoIntel, List<ProcessControlBlock> prontos,
+				Semaphore semaforoCpu) {
 			id = 0;
 			this.memoria = mem;
+			this.intel = intel;
+			this.semaforoIntel = semaforoIntel;
+			this.prontos = prontos;
+			this.semaforoCpu = semaforoCpu;
 			pcb = new ProcessControlBlock[mem.numeroFrames];
 		}
 
@@ -168,13 +181,215 @@ public class Sistema {
 			if (pcb[id] == null) {
 				return false;
 			} else {
-				status = pcb[id];
-				status.running = true;
-				status.pc = 0;
-				vm.cpu.setContext(0, 0, 0);
-				vm.cpu.run();
-				status.running = false;
+				try {
+					semaforoCpu.acquire();
+					prontos.add(pcb[id]);
+				} catch (Exception e) {
+					e.printStackTrace();
+				} finally {
+					semaforoCpu.release();
+				}
 				return true;
+			}
+		}
+
+		public ProcessControlBlock salvaProcessoCpu() {
+			if (status != null) {
+				status.pc = vm.cpu.pc;
+				status.registrador = vm.cpu.reg;
+				return status;
+			}
+			return null;
+		}
+
+		public ProcessControlBlock setStatus(ProcessControlBlock pcb) {
+			try {
+				semaforoCpu.acquire();
+				status = pcb;
+				return status;
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+				return null;
+			} finally {
+				semaforoCpu.release();
+			}
+		}
+
+		public void run() {
+
+			while (true) {
+				try {
+					semaforoIntel.acquire();
+					String opcao = intel.poll();
+					if (opcao != null)
+						switch (opcao.split(" ")[0]) {
+							case "new":
+								try {
+									switch (opcao.split(" ")[1]) {
+										case "fatorial":
+											criaProcesso(progs.fatorial);
+											break;
+										case "fibonacci10":
+											criaProcesso(progs.fibonacci10);
+											break;
+										case "fibonacciSYSCALL":
+											criaProcesso(progs.fibonacciSYSCALL);
+											break;
+										case "fatorialSYSCALL":
+											criaProcesso(progs.fatorialSYSCALL);
+											break;
+										case "progMinimo":
+											criaProcesso(progs.progMinimo);
+											break;
+										case "pb":
+											criaProcesso(progs.PB);
+											break;
+										case "soma":
+											criaProcesso(progs.soma);
+											break;
+										case "subtrai":
+											criaProcesso(progs.subtrai);
+											break;
+										default:
+											System.out.println("Processo inválido");
+											break;
+									}
+								} catch (ArrayIndexOutOfBoundsException e) {
+									System.out.println("Argumentos insuficientes para criar um novo processo.");
+								}
+								break;
+
+							// Esse método adiciona todos os processos
+							case "newAll":
+								try {
+									criaProcesso(progs.fatorial);
+									criaProcesso(progs.fibonacci10);
+									criaProcesso(progs.fibonacciSYSCALL);
+									criaProcesso(progs.fatorialSYSCALL);
+									criaProcesso(progs.progMinimo);
+									criaProcesso(progs.PB);
+									criaProcesso(progs.soma);
+								} catch (Exception e) {
+									System.out.println("Ocorreu um erro ao criar processos.");
+								}
+								break;
+
+							// Metodo adicional caso queira limpar a memoria
+							// desacola todos processos e limpa a memoria
+							case "limpaMemoria":
+								status = null;
+								for (int i = 0; i < pcb.length; i++) {
+									if (pcb[i] != null) {
+										desalocaProcesso(i);
+									}
+								}
+								memoria.limpaMemoria();
+								break;
+
+							case "rm":
+								try {
+									if (!desalocaProcesso(Integer.parseInt(opcao.split(" ")[1]))) {
+										System.out.println("Processo não encontrado");
+									}
+								} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+									System.out.println("Não foi possível remover o processo. Argumentos inválidos.");
+								}
+								break;
+
+							case "ps":
+								boolean existeProcessos = false;
+								for (int i = 0; i < pcb.length; i++) {
+									if (pcb[i] != null) {
+										existeProcessos = true;
+										System.out.println("Processo " + i);
+									}
+								}
+								if (existeProcessos == false) {
+									System.out.println("Não existem processos.");
+								}
+								break;
+
+							case "dump":
+								try {
+									int processId = Integer.parseInt(opcao.split(" ")[1]);
+									if (pcb[processId] != null) {
+										System.out.println(
+												"Processo " + processId + ": " + pcb[processId].processState + " - "
+														+ pcb[processId].running);
+										for (int i = 0; i < pcb[processId].tabelaPaginas.length; i++) {
+											memoria.dump(pcb[processId].tabelaPaginas[i] * vm.tamPagina,
+													(pcb[processId].tabelaPaginas[i] + 1) * vm.tamPagina);
+										}
+									} else {
+										System.out.println("Processo não encontrado");
+									}
+								} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+									System.out.println("Argumentos inválidos para realizar o dump do processo.");
+								}
+								break;
+
+							// Metodo adicional caso queira imprimir uma parte da memoria
+							case "dumpParcial":
+								try {
+									int inicio = Integer.parseInt(opcao.split(" ")[1]);
+									int fim = Integer.parseInt(opcao.split(" ")[2]) + 1;
+									if (fim > vm.tamMemoria) {
+										fim = vm.tamMemoria;
+									}
+									vm.mem.dump(inicio, fim);
+								} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+									System.out.println("Não foi possível realizar o dump parcial da memória.");
+								}
+								break;
+							case "dumpM":
+								vm.mem.dump(0, vm.tamMemoria);
+								break;
+
+							case "exec":
+								try {
+									if (!executaProcesso(Integer.parseInt(opcao.split(" ")[1]))) {
+										System.out.println("Processo não encontrado");
+									}
+								} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+									System.out.println("Argumento inválido para executar o processo.");
+								}
+								break;
+							case "execAll":
+								try {
+									for (int i = 0; i < pcb.length; i++) {
+										if (pcb[i] != null) {
+											executaProcesso(i);
+										}
+									}
+								} catch (Exception e) {
+									System.out.println("Ocorreu um erro ao executar os processos.");
+								}
+								break;
+
+							case "mostraFrame":
+								for (int i = 0; i < vm.mem.numeroFrames; i++) {
+									System.out.println("Frame " + i + ": " + vm.mem.listaFrames[i]);
+								}
+								break;
+
+							case "trace1":
+								vm.cpu.trace = true;
+								break;
+							case "trace0":
+								vm.cpu.trace = false;
+								break;
+							case "exit":
+								System.exit(0);
+								break;
+							default:
+								System.out.println("Opção inválida");
+								break;
+						}
+				} catch (Exception e) {
+					System.out.println("Ocorreu um erro ao pegar a opção da fila." + e.getMessage());
+				} finally {
+					semaforoIntel.release();
+				}
 			}
 		}
 	}
@@ -185,6 +400,7 @@ public class Sistema {
 		public boolean running;
 		public int pc;
 		public int id;
+		public int[] registrador;
 
 		public ProcessControlBlock(int id) {
 			tabelaPaginas = null;
@@ -192,6 +408,7 @@ public class Sistema {
 			running = false;
 			pc = 0;
 			this.id = id;
+			registrador = new int[10];
 		}
 	}
 
@@ -200,19 +417,16 @@ public class Sistema {
 	// -----------------------------------------------------
 
 	public class CPU extends Thread {
+		private int fatiaTempo;
 		private int maxInt; // valores maximo e minimo para inteiros nesta cpu
 		private int minInt;
 		private boolean trace;
-		// característica do processador: contexto da CPU ...
 		private int pc; // ... composto de program counter,
 		private Word ir; // instruction register,
 		private int[] reg; // registradores da CPU
 		private Interrupts irpt; // durante instrucao, interrupcao pode ser sinalizada
 		private int base; // base e limite de acesso na memoria
 		private int limite; // por enquanto toda memoria pode ser acessada pelo processo rodando
-		// ATE AQUI: contexto da CPU - tudo que precisa sobre o estado de um processo
-		// para executa-lo
-		// nas proximas versoes isto pode modificar
 
 		private Memory mem; // mem tem funcoes de dump e o array m de memória 'fisica'
 		private Word[] m; // CPU acessa MEMORIA, guarda referencia a 'm'. m nao muda. semre será um array
@@ -222,9 +436,14 @@ public class Sistema {
 		private SysCallHandling sysCall; // significa desvio para tratamento de chamadas de sistema - SYSCALL
 		private boolean debug; // se true entao mostra cada instrucao em execucao
 		public ProcessManager pm;
+		public Semaphore semaforoIntel;
+		public Semaphore semaforoCpu;
+		public Queue<String> intel;
+		public List<ProcessControlBlock> pcb;
 
-		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug) { // ref a MEMORIA e
-
+		public CPU(Memory _mem, InterruptHandling _ih, SysCallHandling _sysCall, boolean _debug, Semaphore semaforoIntel,
+				Queue<String> _intel) {
+			fatiaTempo = 2;
 			maxInt = 32767; // capacidade de representacao modelada
 			minInt = -32767; // se exceder deve gerar interrupcao de overflow
 			mem = _mem; // usa mem para acessar funcoes auxiliares (dump)
@@ -233,11 +452,15 @@ public class Sistema {
 			ih = _ih; // aponta para rotinas de tratamento de int
 			sysCall = _sysCall; // aponta para rotinas de tratamento de chamadas de sistema
 			debug = _debug; // se true, print da instrucao em execucao
-			pm = new ProcessManager(mem);
+			intel = _intel;
+			this.semaforoIntel = semaforoIntel;
+			pcb = new ArrayList<ProcessControlBlock>();
+			semaforoCpu = new Semaphore(1);
+			pm = new ProcessManager(mem, _intel, semaforoIntel, pcb, semaforoCpu);
 			trace = true;
 		}
 
-		private boolean legal(int e) { // todo acesso a memoria tem que ser verificado
+		private boolean legal(int e) {
 			if (e >= 0 && e < mem.tamMemoria) {
 				return true;
 			} else {
@@ -254,35 +477,55 @@ public class Sistema {
 			return true;
 		}
 
-		public void setContext(int _base, int _limite, int _pc) { // no futuro esta funcao vai ter que ser
+		public void setContext(int _base, int _limite, int _pc, int _reg[]) { // no futuro esta funcao vai ter que ser
 			base = _base; // expandida para setar todo contexto de execucao,
 			limite = _limite; // agora, setamos somente os registradores base,
+			reg = _reg; // limite e pc (deve ser zero nesta versao)
 			pc = _pc; // limite e pc (deve ser zero nesta versao)
 			irpt = Interrupts.noInterrupt; // reset da interrupcao registrada
 		}
 
-		public void run() { // execucao da CPU supoe que o contexto da CPU, vide acima, esta devidamente
-			// setado
-			while (true) { // ciclo de instrucoes. acaba cfe instrucao, veja cada caso.
-				// --------------------------------------------------------------------------------------------------
-				// FETCH
-				if (legal(pc)) { // pc valido
-					ir = m[mem.enderecoFisico(pc, pm.status.tabelaPaginas)]; // <<<<<<<<<<<< busca posicao da memoria
+		public void run() {
+			pm.start();
+			while (true) {
+				ProcessControlBlock processo = null;
+
+				try {
+					semaforoCpu.acquire();
+					if (!pcb.isEmpty()) {
+						processo = pcb.removeFirst();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				} finally {
+					semaforoCpu.release();
+				}
+
+				if (processo != null) {
+					pm.setStatus(processo);
+					setContext(0, 0, processo.pc, processo.registrador);
+					executaCpu();
+				}
+			}
+		}
+
+		public void executaCpu() {
+			while (true) {
+				if (legal(pc)) {
+					ir = m[mem.enderecoFisico(pc, pm.status.tabelaPaginas)];
 					if (trace) {
 						System.out.println("                               pc: " + pc + "       exec: " + ir.opc + " "
 								+ ir.r1 + " "
 								+ ir.r2 + " " + ir.p);
 					}
-					// --------------------------------------------------------------------------------------------------
-					// EXECUTA INSTRUCAO NO ir
 					switch (ir.opc) {
 						case LDI:
 							reg[ir.r1] = ir.p;
 							pc++;
 							break;
 						case LDD:
-							if (legal(mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas))) {
-								reg[ir.r1] = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
+							if (legal(mem.enderecoFisico(ir.p, pm.status.tabelaPaginas))) {
+								reg[ir.r1] = m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].p;
 								pc++;
 							}
 							break;
@@ -293,9 +536,9 @@ public class Sistema {
 							}
 							break;
 						case STD:
-							if (legal(mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas))) {
-								m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].opc = Opcode.DATA;
-								m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p = reg[ir.r1];
+							if (legal(mem.enderecoFisico(ir.p, pm.status.tabelaPaginas))) {
+								m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].opc = Opcode.DATA;
+								m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].p = reg[ir.r1];
 								pc++;
 							}
 							break;
@@ -381,25 +624,25 @@ public class Sistema {
 							}
 							break;
 						case JMPIM:
-							pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
+							pc = m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].p;
 							break;
 						case JMPIGM:
 							if (reg[ir.r2] > 0) {
-								pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
+								pc = m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].p;
 							} else {
 								pc++;
 							}
 							break;
 						case JMPILM:
 							if (reg[ir.r2] < 0) {
-								pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
+								pc = m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].p;
 							} else {
 								pc++;
 							}
 							break;
 						case JMPIEM:
 							if (reg[ir.r2] == 0) {
-								pc = m[mem.enderecoFisico(ir.r1, pm.status.tabelaPaginas)].p;
+								pc = m[mem.enderecoFisico(ir.p, pm.status.tabelaPaginas)].p;
 							} else {
 								pc++;
 							}
@@ -411,12 +654,6 @@ public class Sistema {
 								pc++;
 							}
 							break;
-						// Chamada de sistema
-						case SYSCALL:
-							sysCall.handle(); // <<<<< aqui desvia para rotina de chamada de sistema, no momento so
-							// temos IO
-							pc++;
-							break;
 						case STOP:
 							irpt = Interrupts.intSTOP;
 							pm.desalocaProcesso(pm.status.id);
@@ -424,7 +661,9 @@ public class Sistema {
 						case DATA:
 							irpt = Interrupts.intInstrucaoInvalida;
 							break;
-						// Inexistente
+						case SYSCALL:
+							pc++;
+							break;
 						default:
 							irpt = Interrupts.intInstrucaoInvalida;
 							break;
@@ -448,17 +687,18 @@ public class Sistema {
 		public Word[] m;
 		public Memory mem;
 		public CPU cpu;
+		public ShellThread shell;
 
 		public VM(InterruptHandling ih, SysCallHandling sysCall) {
-			// vm deve ser configurada com endereço de tratamento de interrupcoes e de
-			// chamadas de sistema
-			// cria memória
+			LinkedList<String> intel = new LinkedList<String>();
+			Semaphore semaforoIntel = new Semaphore(1);
+			shell = new ShellThread(intel, semaforoIntel);
 			tamMemoria = 1024;
 			tamPagina = 8;
 			mem = new Memory(tamMemoria, tamPagina);
 			m = mem.memoriaFisica;
 			// cria cpu
-			cpu = new CPU(mem, ih, sysCall, true); // true liga debug
+			cpu = new CPU(mem, ih, sysCall, true, semaforoIntel, intel); // true liga debug
 		}
 	}
 	// ------------------- V M - fim
@@ -553,6 +793,64 @@ public class Sistema {
 		progs = new Programas();
 	}
 
+	public class ShellThread extends Thread {
+
+		private Queue<String> intel;
+		private Semaphore semaforoIntel;
+
+		ShellThread(LinkedList<String> intel, Semaphore semaforoIntel) {
+			this.semaforoIntel = semaforoIntel;
+			this.intel = intel;
+		}
+
+		public void run() {
+			Scanner scanner = new Scanner(System.in);
+
+			System.out.println("\n==============================");
+			System.out.println("          MENU PRINCIPAL       ");
+			System.out.println("==============================\n");
+			System.out.println("Tamanho da memória: " + vm.mem.tamMemoria);
+			System.out.println("Tamanho da página: " + vm.mem.tamPagina);
+			System.out.println("Número de frames: " + vm.mem.numeroFrames);
+			System.out.println("\n");
+
+			System.out.println("Escolha uma opção:");
+
+			System.out.println("new =  Criar um novo processo " +
+					"(fatorial, fibonacci10, " +
+					"fibonacciSYSCALL, fatorialSYSCALL, " +
+					"progMinimo, pb, pc, soma, subtrai)");
+
+			System.out.println("ps = Listar os processos");
+			System.out.println("rm =  Remover um processo");
+			System.out.println("dump + id =  Mostrar o conteúdo de um processo");
+			System.out.println("dumpM =  Mostrar o conteúdo da memória");
+			System.out.println("exec + id =  Executar um processo");
+			System.out.println("trace1 =  Ativar o trace");
+			System.out.println("trace0 =  Desativar o trace");
+			System.out.println("newAll =  Criar todos os processos");
+			System.out.println("dumpParcial =  Mostrar o conteúdo parcial da memória");
+			System.out.println("limpaMemoria =  Limpar toda a memória + processos");
+			System.out.println("mostraFrame =  Mostrar os frames da memória");
+			System.out.println("exit = Encerrar o programa");
+
+			System.out.print("\nDigite a opção desejada: ");
+
+			while (true) {
+				String opcao = scanner.nextLine();
+				try {
+					semaforoIntel.acquire();
+					intel.add(opcao);
+					semaforoIntel.release();
+				} catch (Exception e) {
+					System.out.println("Ocorreu um erro ao adicionar a opção na fila.");
+				} finally {
+					semaforoIntel.release();
+				}
+			}
+		}
+	}
+
 	// ------------------- S I S T E M A - fim
 	// --------------------------------------------------------------
 	// -------------------------------------------------------------------------------------------------------
@@ -560,215 +858,9 @@ public class Sistema {
 	// ------------------- instancia e testa sistema
 	public static void main(String[] args) {
 		Sistema s = new Sistema();
-
-		Scanner scanner = new Scanner(System.in);
-		ProcessManager pm = s.vm.cpu.pm;
-
-		System.out.println("\n==============================");
-		System.out.println("          MENU PRINCIPAL       ");
-		System.out.println("==============================\n");
-		System.out.println("Tamanho da memória: " + s.vm.mem.tamMemoria);
-		System.out.println("Tamanho da página: " + s.vm.mem.tamPagina);
-		System.out.println("Número de frames: " + s.vm.mem.numeroFrames);
-		System.out.println("\n");
-
-		System.out.println("Escolha uma opção:");
-
-		System.out.println("new =  Criar um novo processo " +
-				"(fatorial, fibonacci10, " +
-				"fibonacciSYSCALL, fatorialSYSCALL, " +
-				"progMinimo, pb, pc, soma, subtrai)");
-
-		System.out.println("ps = Listar os processos");
-		System.out.println("rm =  Remover um processo");
-		System.out.println("dump + id =  Mostrar o conteúdo de um processo");
-		System.out.println("dumpM =  Mostrar o conteúdo da memória");
-		System.out.println("exec + id =  Executar um processo");
-		System.out.println("trace1 =  Ativar o trace");
-		System.out.println("trace0 =  Desativar o trace");
-		System.out.println("newAll =  Criar todos os processos");
-		System.out.println("dumpParcial =  Mostrar o conteúdo parcial da memória");
-		System.out.println("limpaMemoria =  Limpar toda a memória + processos");
-		System.out.println("mostraFrame =  Mostrar os frames da memória");
-		System.out.println("exit = Encerrar o programa");
-
-		System.out.print("\nDigite a opção desejada: ");
-
-		while (true) {
-			String opcao = scanner.nextLine();
-
-			switch (opcao.split(" ")[0]) {
-				case "new":
-					try {
-						switch (opcao.split(" ")[1]) {
-							case "fatorial":
-								pm.criaProcesso(progs.fatorial);
-								break;
-							case "fibonacci10":
-								pm.criaProcesso(progs.fibonacci10);
-								break;
-							case "fibonacciSYSCALL":
-								pm.criaProcesso(progs.fibonacciSYSCALL);
-								break;
-							case "fatorialSYSCALL":
-								pm.criaProcesso(progs.fatorialSYSCALL);
-								break;
-							case "progMinimo":
-								pm.criaProcesso(progs.progMinimo);
-								break;
-							case "pb":
-								pm.criaProcesso(progs.PB);
-								break;
-							case "soma":
-								pm.criaProcesso(progs.soma);
-								break;
-							case "subtrai":
-								pm.criaProcesso(progs.subtrai);
-								break;
-							default:
-								System.out.println("Processo inválido");
-								break;
-						}
-					} catch (ArrayIndexOutOfBoundsException e) {
-						System.out.println("Argumentos insuficientes para criar um novo processo.");
-					}
-					break;
-
-				// Esse método adiciona todos os processos
-				case "newAll":
-					try {
-						pm.criaProcesso(progs.fatorial);
-						pm.criaProcesso(progs.fibonacci10);
-						pm.criaProcesso(progs.fibonacciSYSCALL);
-						pm.criaProcesso(progs.fatorialSYSCALL);
-						pm.criaProcesso(progs.progMinimo);
-						pm.criaProcesso(progs.PB);
-						pm.criaProcesso(progs.soma);
-					} catch (Exception e) {
-						System.out.println("Ocorreu um erro ao criar processos.");
-					}
-					break;
-
-				// Metodo adicional caso queira limpar a memoria
-				// desacola todos processos e limpa a memoria
-				case "limpaMemoria":
-					pm.status = null;
-					for (int i = 0; i < pm.pcb.length; i++) {
-						if (pm.pcb[i] != null) {
-							pm.desalocaProcesso(i);
-						}
-					}
-					s.vm.cpu.mem.limpaMemoria();
-					break;
-
-				case "rm":
-					try {
-						if (!pm.desalocaProcesso(Integer.parseInt(opcao.split(" ")[1]))) {
-							System.out.println("Processo não encontrado");
-						}
-					} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-						System.out.println("Não foi possível remover o processo. Argumentos inválidos.");
-					}
-					break;
-
-				case "ps":
-					boolean existeProcessos = false;
-					for (int i = 0; i < pm.pcb.length; i++) {
-						if (pm.pcb[i] != null) {
-							existeProcessos = true;
-							System.out.println("Processo " + i);
-						}
-					}
-					if (existeProcessos == false) {
-						System.out.println("Não existem processos.");
-					}
-					break;
-
-				case "dump":
-					try {
-						int processId = Integer.parseInt(opcao.split(" ")[1]);
-						if (pm.pcb[processId] != null) {
-							System.out.println(
-									"Processo " + processId + ": " + pm.pcb[processId].processState + " - "
-											+ pm.pcb[processId].running);
-							for (int i = 0; i < pm.pcb[processId].tabelaPaginas.length; i++) {
-								s.vm.mem.dump(pm.pcb[processId].tabelaPaginas[i] * s.vm.tamPagina,
-										(pm.pcb[processId].tabelaPaginas[i] + 1) * s.vm.tamPagina);
-							}
-						} else {
-							System.out.println("Processo não encontrado");
-						}
-					} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-						System.out.println("Argumentos inválidos para realizar o dump do processo.");
-					}
-					break;
-
-				// Metodo adicional caso queira imprimir uma parte da memoria
-				case "dumpParcial":
-					try {
-						int inicio = Integer.parseInt(opcao.split(" ")[1]);
-						int fim = Integer.parseInt(opcao.split(" ")[2]) + 1;
-						if (fim > s.vm.tamMemoria) {
-							fim = s.vm.tamMemoria;
-						}
-						s.vm.mem.dump(inicio, fim);
-					} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-						System.out.println("Não foi possível realizar o dump parcial da memória.");
-					}
-					break;
-				case "dumpM":
-					s.vm.mem.dump(0, s.vm.tamMemoria);
-					break;
-
-				case "exec":
-					try {
-						if (!pm.executaProcesso(Integer.parseInt(opcao.split(" ")[1]))) {
-							System.out.println("Processo não encontrado");
-						}
-					} catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-						System.out.println("Argumento inválido para executar o processo.");
-					}
-					break;
-				case "execAll":
-					try {
-						for (int i = 0; i < pm.pcb.length; i++) {
-							if (pm.pcb[i] != null) {
-								pm.executaProcesso(i);
-							}
-						}
-					} catch (Exception e) {
-						System.out.println("Ocorreu um erro ao executar os processos.");
-					}
-				break;
-
-				case "mostraFrame":
-					for (int i = 0; i < s.vm.mem.numeroFrames; i++) {
-						System.out.println("Frame " + i + ": " + s.vm.mem.listaFrames[i]);
-					}
-					break;
-
-				case "trace1":
-					s.vm.cpu.trace = true;
-					break;
-				case "trace0":
-					s.vm.cpu.trace = false;
-					break;
-				case "exit":
-					System.exit(0);
-					break;
-				default:
-					System.out.println("Opção inválida");
-					break;
-			}
-		}
+		s.vm.shell.start();
+		s.vm.cpu.start();
 	}
-
-	// -------------------------------------------------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
-	// -------------------------------------------------------------------------------------------------------
-	// --------------- P R O G R A M A S - não fazem parte do sistema
-	// esta classe representa programas armazenados (como se estivessem em disco)
-	// que podem ser carregados para a memória (load faz isto)
 
 	public static class Word { // cada posicao da memoria tem uma instrucao (ou um dado)
 		public Opcode opc; //
@@ -786,7 +878,6 @@ public class Sistema {
 
 	public static class Programas {
 		public Word[] fatorial = new Word[] {
-				// este fatorial so aceita valores positivos. nao pode ser zero
 				new Word(Opcode.LDI, 0, -1, 4), // 0 r0 é valor a calcular fatorial
 				new Word(Opcode.LDI, 1, -1, 1), // 1 r1 é 1 para multiplicar (por r0)
 				new Word(Opcode.LDI, 6, -1, 1), // 2 r6 é 1 para ser o decremento
@@ -921,9 +1012,6 @@ public class Sistema {
 		};
 
 		public Word[] PB = new Word[] {
-				// dado um inteiro em alguma posição de memória,
-				// se for negativo armazena -1 na saída; se for positivo responde o fatorial do
-				// número na saída
 				new Word(Opcode.LDI, 0, -1, 7), // numero para colocar na memoria
 				new Word(Opcode.STD, 0, -1, 50),
 				new Word(Opcode.LDD, 0, -1, 50),
@@ -951,7 +1039,7 @@ public class Sistema {
 		public Word[] subtrai = new Word[] {
 				new Word(Opcode.LDI, 0, -1, 50),
 				new Word(Opcode.SUBI, 0, -1, 5),
-				new Word(Opcode.STD, 0, -1, 14),
+				new Word(Opcode.STD, 0, -1, 5),
 				new Word(Opcode.STOP, -1, -1, -1)
 		};
 	}
